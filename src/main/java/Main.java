@@ -1,3 +1,4 @@
+import DFS.DFSTester;
 import apk.ApkInfo;
 import apk.ApkUtil;
 import io.appium.java_client.AppiumDriver;
@@ -9,6 +10,8 @@ import java.net.URL;
 import java.util.concurrent.*;
 
 public class Main {
+    private static AppiumDriver driver = null;
+
     public static void main(String[] args){
         //获取命令行参数
 //        File appPath = new File(args[0]);
@@ -19,18 +22,15 @@ public class Main {
         //获取ApkInfo
         ApkUtil apkUtil = new ApkUtil();
         ApkInfo apkInfo = apkUtil.parseApk(appPath.getAbsolutePath());
-        System.out.println(apkInfo.toString());
         //初始化appium
         initAppiumTest(appPath,udid,serverPort,apkInfo);
         //执行测试
-        autoTest(runtime,udid);
+        autoTest(runtime,apkInfo);
 
     }
 
     public static AppiumDriver initAppiumTest(File appPath,String udid,String serverPort,ApkInfo apkInfo){
-        AppiumDriver driver = null;
         DesiredCapabilities capabilities = new DesiredCapabilities();
-//        capabilities.setCapability("browserName", "");
         capabilities.setCapability("deviceName","myPhone");
         capabilities.setCapability("platformName", "Android");
         capabilities.setCapability("platformVersion", apkInfo.getTargetSdkVersion());
@@ -54,14 +54,14 @@ public class Main {
         return driver;
     }
 
-    public static void autoTest(int runtime,String udid){
+    public static void autoTest(int runtime,ApkInfo apkInfo){
         final ExecutorService exec = Executors.newFixedThreadPool(1);
         Callable<Boolean> call = new Callable<Boolean>() {
             @Override
             public Boolean call() throws Exception {
                 //生成测试用例
-//                Thread.sleep(runtime*1000);
-                TestGenerater.generateTest(udid);
+                DFSTester tester = new DFSTester();
+                tester.beginDFSTest(driver,apkInfo);
                 return true;
             }
         };
