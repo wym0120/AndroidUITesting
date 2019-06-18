@@ -14,7 +14,17 @@ public class PageNode {
     //可滑动
     private boolean scrollable;
     //可选择
-    private boolean selectable;
+    private boolean selected;
+    //xpath
+    private String xpath;
+
+    public String getXpath() {
+        return xpath;
+    }
+
+    public void setXpath(String xpath) {
+        this.xpath = xpath;
+    }
 
     public int getPageIndex() {
         return pageIndex;
@@ -64,11 +74,11 @@ public class PageNode {
         this.scrollable = scrollable;
     }
 
-    public boolean isSelectable() {
-        return selectable;
+    public boolean isSelected() {
+        return selected;
     }
 
-    public void setSelectable(boolean selectable) {
-        this.selectable = selectable;
+    public void setSelected(boolean selected) {
+        this.selected = selected;
     }
 }

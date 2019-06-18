@@ -41,9 +41,11 @@ public class Main {
         capabilities.setCapability("app", appPath.getAbsolutePath());
         //开启unicode，支持输入中文和特殊字符
         capabilities.setCapability("unicodeKeyboard","true");
-
         //重置键盘
         capabilities.setCapability("resetKeyboard","true");
+
+        //todo:这个最后要清理掉
+        capabilities.setCapability("newCommandTimeout", 10);
 
         String url = "http://127.0.0.1:"+serverPort+"/wd/hub";
         try {

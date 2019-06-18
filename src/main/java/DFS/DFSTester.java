@@ -3,18 +3,26 @@ package DFS;
 import apk.ApkInfo;
 import io.appium.java_client.AppiumDriver;
 import org.dom4j.*;
+import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebElement;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Stack;
+import java.util.stream.Collectors;
 
 public class DFSTester {
+
+    private StringBuilder xpathBuilder;
+    private Stack<String> xpathStack;
+
     private String packageName;
     //很重要，用来指示哪一个页面正在被执行
     private int pagePointer;
     private int prePageHashCode;
     private List<Page> pageList;
     private AppiumDriver driver;
+    private List<PageNode> nodeList;
 
     public void beginDFSTest(AppiumDriver driver, ApkInfo apkInfo) {
         //初始化测试参数
@@ -24,6 +32,12 @@ public class DFSTester {
         pageList = new ArrayList<>();
         pagePointer = 0;
         Page firstPage = generatePage();
+
+        //第一次打开应用时候的权限检查
+        if (checkPermissionRequest()) {
+            Authorize();
+            firstPage = generatePage();
+        }
         //生成页面的hashcode
         firstPage.generateHashCode();
         prePageHashCode = firstPage.getHashcode();
@@ -31,7 +45,11 @@ public class DFSTester {
 
         //接下来对这个page开始进行测试操作
         //这里应该是一直循环直到没有新的页面被加进来
-        sendEvents(firstPage);
+        int pageCountBefore = pageList.size();
+        int pageCountAfter = 0;
+        while ((pageCountBefore != pageCountAfter) && (pagePointer != pageList.size())) {
+            sendEvents(pageList.get(pagePointer));
+        }
     }
 
     /**
@@ -49,7 +67,11 @@ public class DFSTester {
             page.setLoginPage(false);
             page.setPageIndex(pagePointer);
             page.setPointer(0);
-            List<PageNode> nodeList = new ArrayList<>();
+            nodeList = new ArrayList<>();
+
+            //初始化xpathBuilder
+            xpathBuilder = new StringBuilder();
+            xpathStack = new Stack<>();
             generatePageNode(root, 0, nodeList);
             page.setNodeList(nodeList);
         } catch (DocumentException e) {
@@ -68,92 +90,195 @@ public class DFSTester {
     private void generatePageNode(Element node, int depth, List<PageNode> nodeList) {
         PageNode currentNode = new PageNode();
         currentNode.setDepth(depth);
-        currentNode.setText(node.attributeValue("text"));
-        currentNode.setClassName(node.attributeValue("class"));
         currentNode.setClickable(Boolean.parseBoolean(node.attributeValue("clickable")));
         currentNode.setScrollable(Boolean.parseBoolean(node.attributeValue("scrollable")));
-        currentNode.setSelectable(Boolean.parseBoolean(node.attributeValue("selectable")));
-        //判断是否能进行任何操作或者给出关于页面的提示
-        boolean operational = currentNode.isClickable() || currentNode.isScrollable() || currentNode.isSelectable();
-        boolean hasInfo = (currentNode.getText() != null) && (!currentNode.getText().equals(""));
-        if (operational || hasInfo) {
+        boolean operational = currentNode.isClickable() || currentNode.isScrollable();
+        currentNode.setClassName(node.attributeValue("class"));
+
+        //xpath
+        String path = generateXpath(node);
+        xpathStack.push(path);
+        xpathBuilder.append("/").append(path);
+
+        //判断是否能进行任何操作
+        if (operational) {
+            String currentNodeText = node.attributeValue("text");
+            if (currentNode.isScrollable()) {
+                currentNode.setText(currentNodeText);
+            } else {
+                List<Element> child = node.elements();
+                String totalText = child.stream().map(n -> n.attribute("text").getValue()).reduce(currentNodeText, (a, b) -> a + b);
+                currentNode.setText(totalText);
+            }
+
+            currentNode.setXpath(simplifyXpath(xpathBuilder.toString()));
+            System.out.println(currentNode.getXpath());
             //加入list中
             nodeList.add(currentNode);
         }
         //深度+1
         depth++;
         //递归遍历当前节点所有的子节点
-        List<Element> listElement = node.elements();//所有一级子节点的list
-        for (Element e : listElement) {//遍历所有一级子节点
+        List<Element> childNodes = node.elements();
+        for (Element e : childNodes) {
             generatePageNode(e, depth, nodeList);
             //深度-1
             depth--;
+            int length = xpathBuilder.length();
+            xpathBuilder.delete(length - xpathStack.pop().length() - 1, length);
+        }
+    }
+
+    /**
+     * 获取某一个结点的xpath
+     *
+     * @param element
+     * @return
+     */
+    private String generateXpath(Element element) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(element.attributeValue("class") == null ? "" : element.attributeValue("class"));
+        String resourceID = element.attributeValue("resource-id");
+        String contentDesc = element.attributeValue("content-desc");
+        String text = element.attributeValue("text");
+        String index = element.attributeValue("index");
+        if (resourceID != null && !resourceID.equals("")) {
+            builder.append("[@resource-id='").append(element.attributeValue("resource-id")).append("']");
+            return builder.toString();
+        } else if (contentDesc != null && !contentDesc.equals("")) {
+            builder.append("[@content-desc='").append(element.attributeValue("content-desc")).append("']");
+            return builder.toString();
+        } else if (text != null && !text.equals("")) {
+            builder.append("[@text='").append(element.attributeValue("text")).append("']");
+            return builder.toString();
+        } else if (index != null && !index.equals("0")) {
+            builder.append("[").append(element.attributeValue("index")).append("]");
+            return builder.toString();
+        }
+        return builder.toString();
+    }
+
+    /**
+     * 根据最复杂的xpath生成简化之后的相对路径
+     *
+     * @return
+     */
+    private String simplifyXpath(String xpath) {
+        int index = xpath.lastIndexOf("[@");
+        if (index != -1) {
+            int j = index;
+            while (xpath.charAt(j) != '/') {
+                j--;
+            }
+            xpath = "/" + xpath.substring(j);
+            return xpath;
+        } else {
+            return xpath;
         }
     }
 
     /**
      * 发送事件
+     *
      * @param oriPage
      */
-    private void sendEvents(Page oriPage){
-        //首先检查是否有权限要求
-        boolean needPermission = checkPermissionRequest(oriPage);
-        if(needPermission){
-            /**
-             * 这里要考虑是直接刚进应用就需要授权还是做了某个操作之后再授权
-             * 前者没想明白
-             * 后者可能跳转到新的页面
-             */
-//            pageList.remove(oriPage);
-//            Page newPage = generatePage();
-//            pageList.add(newPage);
-        }
-
-        //检查是否有弹窗
-
+    private void sendEvents(Page oriPage) {
         //检查是不是登录页面，如果是登陆页那么就特殊处理
-        //挨个遍历节点，当要点击button之前把所有能填充的地方都给填充了
-        //根据组件类型进行操作，记录行为，检查页面是否有变动
+        boolean isLoginPage = checkLoginPage();
+        if (isLoginPage) {
+            login();
+            return;
+        }
+        List<PageNode> pageNodeList = oriPage.getNodeList();
+        //处理可以滑动的组件
+        List<PageNode> scrollableNodes = pageNodeList.stream().filter(PageNode::isScrollable).collect(Collectors.toList());
+        //处理可以点击的组件
+        List<PageNode> clickableNodes = pageNodeList.stream().filter(PageNode::isClickable).collect(Collectors.toList());
+        List<PageNode> editTextNodes = pageNodeList.stream()
+                .filter(n -> n.getClassName().equals("android.widget.EditText") || n.getClassName().equals("android.widget.AutoCompleteTextView"))
+                .collect(Collectors.toList());
+        for (PageNode clickableNode : clickableNodes) {
+//            System.out.println(clickableNode.getXpath());
+            WebElement element = driver.findElementByXPath(clickableNode.getXpath());
+            for (PageNode editNode : editTextNodes) {
+//                System.out.println(editNode.getXpath());
+                WebElement editElement = driver.findElementByXPath(editNode.getXpath());
+                editElement.sendKeys("abc");
+            }
+            element.click();
+        }
+    }
 
-        //如果跳转到了一个新的页面就把这个页面解析并且加进列表里面，然后回退到原页面，这里登陆页面不需要回退，弹窗页面处理完就需要删掉
-        //根据不同的组件选择不同的跳转方式，记录下来跳转到的新页面的最后一次行为，方便做反向的行为或者再做一次这个行为
-        //todo 创建一个Action类去记录这个行为
+    /**
+     * 检查是否产生了新页面
+     *
+     * @return
+     */
+    private boolean checkGenerateNewPage() {
+        Page currentPage = generatePage();
+        currentPage.generateHashCode();
+        return (currentPage.getHashcode() != prePageHashCode);
     }
 
     /**
      * 如果有需要权限的地方就把它全部允许并且重新识别页面
-     * @param page
+     *
      * @return
      */
-    private boolean checkPermissionRequest(Page page){
-        String by = "new UiSelector().className(\"android.widget.Button\").textMatches(\".*允许.*\")";
-        WebElement element = driver.findElementByAndroidUIAutomator(by);
-        if(element!=null){
-            keepClick(by);
-            return true;
-        }else{
-            return false;
+    private boolean checkPermissionRequest() {
+        String by = "new UiSelector().className(\"android.widget.Button\").textMatches(\".*允许.*|.*确认.*|.*确定.*|ok|OK|\")";
+        try {
+            WebElement element = driver.findElementByAndroidUIAutomator(by);
+            return element != null;
+        } catch (NoSuchElementException e) {
+            System.out.println("当前页面不需要授权");
         }
+        return false;
     }
 
-    private void keepClick(String by){
-        WebElement element = driver.findElementByAndroidUIAutomator(by);
-        while (true) {
-            if (element.isDisplayed()) {
-                element.click();
-            } else {
-                break;
+    /**
+     * 保持点击授权按钮，防止多个权限要求
+     */
+    private void Authorize() {
+        String by = "new UiSelector().className(\"android.widget.Button\").textMatches(\".*允许.*|.*确认.*|.*确定.*|ok|OK|\")";
+        try {
+            WebElement element = driver.findElementByAndroidUIAutomator(by);
+            while (true) {
+                if (element.isDisplayed()) {
+                    element.click();
+                } else {
+                    break;
+                }
             }
+        } catch (NoSuchElementException e) {
+            System.out.println("当前页面不需要授权");
         }
     }
 
-    //todo:是否需要检查业务弹窗还要再想一下
-    private boolean checkBussinessRequest(Page page){
+    /**
+     * 检查是否有登录的按钮
+     *
+     * @return
+     */
+    private boolean checkLoginPage() {
+        String by = "new UiSelector().className(\"android.widget.Button\").textMatches(\".*登陆.*|.*登錄.*|login\")";
+        try {
+            WebElement element = driver.findElementByAndroidUIAutomator(by);
+            return element != null;
+        } catch (NoSuchElementException e) {
+            System.out.println("当前页面不是登录页面");
+        }
         return false;
     }
 
-    private boolean checkLoginPage(Page page){
-        return false;
-    }
+    /**
+     * 根据包名选择特定的登陆方法
+     * 登陆之后不跳回原界面
+     * 检查登陆之后的页面是否和之前的页面有重叠
+     * 有重叠就把指针指向之前的页面
+     * 没有就添加新的页面然后丢掉之前的页面
+     */
+    private void login() {
 
+    }
 }
