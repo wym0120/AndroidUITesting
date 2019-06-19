@@ -3,13 +3,18 @@ package DFS;
 import apk.ApkInfo;
 import io.appium.java_client.AppiumDriver;
 import org.dom4j.*;
+import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.remote.RemoteWebElement;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Stack;
 import java.util.stream.Collectors;
+
+import static DFS.XpathUtil.generateXpath;
 
 public class DFSTester {
 
@@ -19,10 +24,12 @@ public class DFSTester {
     private String packageName;
     //很重要，用来指示哪一个页面正在被执行
     private int pagePointer;
+    //当前执行页的上一页的hashcode
     private int prePageHashCode;
     private List<Page> pageList;
     private AppiumDriver driver;
     private List<PageNode> nodeList;
+    private boolean isNewPageGenerated;
 
     public void beginDFSTest(AppiumDriver driver, ApkInfo apkInfo) {
         //初始化测试参数
@@ -31,6 +38,7 @@ public class DFSTester {
         //初始化页面
         pageList = new ArrayList<>();
         pagePointer = 0;
+        prePageHashCode = 0;
         Page firstPage = generatePage();
 
         //第一次打开应用时候的权限检查
@@ -40,7 +48,6 @@ public class DFSTester {
         }
         //生成页面的hashcode
         firstPage.generateHashCode();
-        prePageHashCode = firstPage.getHashcode();
         pageList.add(firstPage);
 
         //接下来对这个page开始进行测试操作
@@ -88,6 +95,7 @@ public class DFSTester {
      * @param nodeList
      */
     private void generatePageNode(Element node, int depth, List<PageNode> nodeList) {
+        //todo：这里关于imagebutton返回上一级界面要处理，最后先过滤后reverse访问这样比较稳
         PageNode currentNode = new PageNode();
         currentNode.setDepth(depth);
         currentNode.setClickable(Boolean.parseBoolean(node.attributeValue("clickable")));
@@ -111,7 +119,7 @@ public class DFSTester {
                 currentNode.setText(totalText);
             }
 
-            currentNode.setXpath(simplifyXpath(xpathBuilder.toString()));
+            currentNode.setXpath(XpathUtil.simplifyXpath(xpathBuilder.toString()));
             System.out.println(currentNode.getXpath());
             //加入list中
             nodeList.add(currentNode);
@@ -130,54 +138,6 @@ public class DFSTester {
     }
 
     /**
-     * 获取某一个结点的xpath
-     *
-     * @param element
-     * @return
-     */
-    private String generateXpath(Element element) {
-        StringBuilder builder = new StringBuilder();
-        builder.append(element.attributeValue("class") == null ? "" : element.attributeValue("class"));
-        String resourceID = element.attributeValue("resource-id");
-        String contentDesc = element.attributeValue("content-desc");
-        String text = element.attributeValue("text");
-        String index = element.attributeValue("index");
-        if (resourceID != null && !resourceID.equals("")) {
-            builder.append("[@resource-id='").append(element.attributeValue("resource-id")).append("']");
-            return builder.toString();
-        } else if (contentDesc != null && !contentDesc.equals("")) {
-            builder.append("[@content-desc='").append(element.attributeValue("content-desc")).append("']");
-            return builder.toString();
-        } else if (text != null && !text.equals("")) {
-            builder.append("[@text='").append(element.attributeValue("text")).append("']");
-            return builder.toString();
-        } else if (index != null && !index.equals("0")) {
-            builder.append("[").append(element.attributeValue("index")).append("]");
-            return builder.toString();
-        }
-        return builder.toString();
-    }
-
-    /**
-     * 根据最复杂的xpath生成简化之后的相对路径
-     *
-     * @return
-     */
-    private String simplifyXpath(String xpath) {
-        int index = xpath.lastIndexOf("[@");
-        if (index != -1) {
-            int j = index;
-            while (xpath.charAt(j) != '/') {
-                j--;
-            }
-            xpath = "/" + xpath.substring(j);
-            return xpath;
-        } else {
-            return xpath;
-        }
-    }
-
-    /**
      * 发送事件
      *
      * @param oriPage
@@ -192,21 +152,90 @@ public class DFSTester {
         List<PageNode> pageNodeList = oriPage.getNodeList();
         //处理可以滑动的组件
         List<PageNode> scrollableNodes = pageNodeList.stream().filter(PageNode::isScrollable).collect(Collectors.toList());
+        JavascriptExecutor js = (JavascriptExecutor) driver;
+        String directions[] = {"down", "up", "left", "right"};
+        for (PageNode scrollableNode : scrollableNodes) {
+            WebElement element = driver.findElementByXPath(scrollableNode.getXpath());
+            HashMap<String, String> scrollObject = new HashMap<>();
+            for (String direction : directions) {
+                scrollObject.put("direction", direction);
+                scrollObject.put("element", ((RemoteWebElement) element).getId());
+                js.executeScript("mobile: scroll", scrollObject);
+            }
+        }
         //处理可以点击的组件
-        List<PageNode> clickableNodes = pageNodeList.stream().filter(PageNode::isClickable).collect(Collectors.toList());
+        List<PageNode> clickableNodes = pageNodeList.stream()
+                .filter(PageNode::isClickable)
+                .filter(n -> !n.isVisited())
+                .collect(Collectors.toList());
         List<PageNode> editTextNodes = pageNodeList.stream()
                 .filter(n -> n.getClassName().equals("android.widget.EditText") || n.getClassName().equals("android.widget.AutoCompleteTextView"))
                 .collect(Collectors.toList());
         for (PageNode clickableNode : clickableNodes) {
-//            System.out.println(clickableNode.getXpath());
             WebElement element = driver.findElementByXPath(clickableNode.getXpath());
             for (PageNode editNode : editTextNodes) {
-//                System.out.println(editNode.getXpath());
                 WebElement editElement = driver.findElementByXPath(editNode.getXpath());
                 editElement.sendKeys("abc");
+                driver.sendKeyEvent(66);
+                driver.hideKeyboard();
             }
+            clickableNode.setVisited(true);
             element.click();
+            //检查权限和登陆
+            if (checkPermissionRequest()) Authorize();
+            if (checkLoginPage()) {
+                login();
+                return;
+            }
+            //检查是否产生了新的页
+            Page currentPage = generatePage();
+            boolean isNewPageGenerated = checkGenerateNewPage(currentPage);
+            if (isNewPageGenerated) {//出现了从没见过的页面
+
+            } else {
+                //判断是否为上一页
+                if (currentPage.getHashcode() == prePageHashCode) {
+                    //是上一页(比如点了非系统返回键的返回键就会出现这种情况)
+
+                } else if (currentPage.getHashcode() == oriPage.getHashcode()) {
+                    //还在当前页面
+                } else {
+                    //到达了访问过的页面(未必执行过)
+                }
+            }
         }
+    }
+
+    /**
+     * @return 尝试回退之后的页面hashcode
+     */
+    private boolean tryReturn(Page currentPage, Action action) {
+        driver.sendKeyEvent(4);
+        Page unknownPageAfterTry = generatePage();
+        unknownPageAfterTry.generateHashCode();
+        int currentPageHashCode = currentPage.getHashcode();
+        int unknownPageHashCode = unknownPageAfterTry.getHashcode();
+        //todo：处理多重弹窗的逻辑不一定对
+        //处理多重弹窗
+        while (unknownPageHashCode == currentPageHashCode) {
+            driver.sendKeyEvent(4);
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            unknownPageAfterTry = generatePage();
+            unknownPageAfterTry.generateHashCode();
+            //弹窗通过返回键也处理不掉或者已经回不去了
+            if (unknownPageHashCode == unknownPageAfterTry.getHashcode()) {
+                pageList.add(unknownPageAfterTry);
+                prePageHashCode = 0;
+                return false;
+
+            }
+            unknownPageHashCode = unknownPageAfterTry.getHashcode();
+        }
+        return true;
     }
 
     /**
@@ -214,10 +243,11 @@ public class DFSTester {
      *
      * @return
      */
-    private boolean checkGenerateNewPage() {
-        Page currentPage = generatePage();
+    private boolean checkGenerateNewPage(Page currentPage) {
         currentPage.generateHashCode();
-        return (currentPage.getHashcode() != prePageHashCode);
+        return pageList.stream()
+                .map(Page::getHashcode)
+                .anyMatch(hashcode -> hashcode == currentPage.getHashcode());
     }
 
     /**

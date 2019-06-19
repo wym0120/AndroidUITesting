@@ -17,6 +17,16 @@ public class PageNode {
     private boolean selected;
     //xpath
     private String xpath;
+    //是否已经被访问过
+    private boolean visited;
+
+    public boolean isVisited() {
+        return visited;
+    }
+
+    public void setVisited(boolean visited) {
+        this.visited = visited;
+    }
 
     public String getXpath() {
         return xpath;
