@@ -15,7 +15,7 @@ public class Main {
     public static void main(String[] args){
         //获取命令行参数
 //        File appPath = new File(args[0]);
-        File appPath = new File("src/main/resources/apk/GuDong.apk");
+        File appPath = new File("src/main/resources/apk/IThouse.apk");
         String udid = args[1];
         String serverPort = args[2];
         int runtime = Integer.parseInt(args[3]);
@@ -45,7 +45,7 @@ public class Main {
         capabilities.setCapability("resetKeyboard", true);
 
         //todo:这个最后要清理掉
-        capabilities.setCapability("newCommandTimeout", 10);
+        capabilities.setCapability("newCommandTimeout", 60);
 
         String url = "http://127.0.0.1:"+serverPort+"/wd/hub";
         try {

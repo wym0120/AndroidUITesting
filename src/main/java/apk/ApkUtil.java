@@ -63,19 +63,13 @@ public class ApkUtil {
 
     private void setApkInfoProperty(ApkInfo apkInfo, String source) {
         if (source.startsWith(LAUNCHABLE_ACTIVITY)) {
-            System.out.println(LAUNCHABLE_ACTIVITY + " : ");
             apkInfo.setLaunchActivity(getPropertyInQuote(source));
         } else if (source.startsWith(PACKAGE)) {
-            System.out.println(PACKAGE + " : ");
             String[] packageInfo = source.split(SPLIT_REGEX);
             apkInfo.setPackageName(packageInfo[2]);
         } else if (source.startsWith(TARGET_SDK_VERSION)) {
-            System.out.println(TARGET_SDK_VERSION + " : ");
             apkInfo.setTargetSdkVersion(getPlatformVersion(getPropertyInQuote(source)));
-        }else {
-//            System.out.println("Others : ");
         }
-//        System.out.println(source);
     }
 
     private String getPropertyInQuote(String source) {

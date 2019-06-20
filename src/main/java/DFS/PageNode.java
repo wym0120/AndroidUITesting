@@ -1,8 +1,8 @@
 package DFS;
 
 public class PageNode {
-    //当前的归属页面
-    private int pageIndex;
+    //编号
+    private int index;
     //当前节点深度
     private int depth;
     //文本内容
@@ -36,12 +36,12 @@ public class PageNode {
         this.xpath = xpath;
     }
 
-    public int getPageIndex() {
-        return pageIndex;
+    public int getIndex() {
+        return index;
     }
 
-    public void setPageIndex(int pageIndex) {
-        this.pageIndex = pageIndex;
+    public void setIndex(int index) {
+        this.index = index;
     }
 
     public int getDepth() {
