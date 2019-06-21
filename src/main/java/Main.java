@@ -45,7 +45,7 @@ public class Main {
         capabilities.setCapability("resetKeyboard", true);
 
         //todo:这个最后要清理掉
-        capabilities.setCapability("newCommandTimeout", 60);
+        capabilities.setCapability("newCommandTimeout", 300);
 
         String url = "http://127.0.0.1:"+serverPort+"/wd/hub";
         try {
@@ -63,6 +63,7 @@ public class Main {
             public Boolean call() throws Exception {
                 //生成测试用例
                 DFSTester tester = new DFSTester();
+                Thread.sleep(2000);
                 tester.beginDFSTest(driver,apkInfo);
                 return true;
             }

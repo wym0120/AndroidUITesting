@@ -11,7 +11,18 @@ public class XpathUtil {
      */
     public static String generateXpath(Element element) {
         StringBuilder builder = new StringBuilder();
-        builder.append(element.attributeValue("class") == null ? "" : element.attributeValue("class"));
+        String className = element.attributeValue("class");
+        if (className != null) {
+            //对特殊符号特别处理
+            if (!className.contains("$")) {
+                builder.append(className);
+            } else {
+//                String sub = className.substring(className.lastIndexOf('.')+1,className.lastIndexOf('$'));
+//                builder.append("[contains(name(), '").append(sub).append("' )]");
+                builder.append(className.replace('$', '.'));
+
+            }
+        }
         String resourceID = element.attributeValue("resource-id");
         String contentDesc = element.attributeValue("content-desc");
         String text = element.attributeValue("text");
