@@ -1,6 +1,8 @@
 package DFS;
 
 public class PageNode {
+    //所属的页面编号
+    private int belonging;
     //编号
     private int index;
     //当前节点深度
@@ -19,6 +21,14 @@ public class PageNode {
     private String xpath;
     //是否已经被访问过
     private boolean visited;
+
+    public int getBelonging() {
+        return belonging;
+    }
+
+    public void setBelonging(int belonging) {
+        this.belonging = belonging;
+    }
 
     public boolean isVisited() {
         return visited;

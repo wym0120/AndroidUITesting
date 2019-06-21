@@ -2,12 +2,16 @@ package DFS;
 
 import org.dom4j.Element;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
+
 public class XpathUtil {
     /**
      * 获取某一个结点的xpath
      *
-     * @param element
-     * @return
+     * @param element 节点
+     * @return xpath
      */
     public static String generateXpath(Element element) {
         StringBuilder builder = new StringBuilder();
@@ -17,8 +21,6 @@ public class XpathUtil {
             if (!className.contains("$")) {
                 builder.append(className);
             } else {
-//                String sub = className.substring(className.lastIndexOf('.')+1,className.lastIndexOf('$'));
-//                builder.append("[contains(name(), '").append(sub).append("' )]");
                 builder.append(className.replace('$', '.'));
 
             }
@@ -27,26 +29,34 @@ public class XpathUtil {
         String contentDesc = element.attributeValue("content-desc");
         String text = element.attributeValue("text");
         String index = element.attributeValue("index");
-        if (resourceID != null && !resourceID.equals("")) {
-            builder.append("[@resource-id='").append(element.attributeValue("resource-id")).append("']");
-            return builder.toString();
-        } else if (contentDesc != null && !contentDesc.equals("")) {
-            builder.append("[@content-desc='").append(element.attributeValue("content-desc")).append("']");
-            return builder.toString();
-        } else if (text != null && !text.equals("")) {
-            builder.append("[@text='").append(element.attributeValue("text")).append("']");
-            return builder.toString();
+        if (text != null && !text.equals("")) {
+            builder.append("[@text='").append(text).append("']");
         } else if (index != null && !index.equals("0")) {
-            builder.append("[").append(element.attributeValue("index")).append("]");
-            return builder.toString();
+            //获得相对的Index
+            List<Element> nodeList = element.getParent().elements();
+            nodeList = nodeList.stream().filter(n -> n.attributeValue("class").equals(className)).collect(Collectors.toList());
+            int trueIndex = Integer.parseInt(index);
+            for (int i = 0; i < nodeList.size(); i++) {
+                if (nodeList.get(i).attributeValue("index").equals(index)) {
+                    trueIndex = i + 1;
+                    break;
+                }
+            }
+            builder.append("[").append(trueIndex).append("]");
+        } else if (resourceID != null && !resourceID.equals("")) {
+            builder.append("[@resource-id='").append(resourceID).append("']");
+        } else if (contentDesc != null && !contentDesc.equals("")) {
+            builder.append("[@content-desc='").append(contentDesc).append("']");
         }
+
+
         return builder.toString();
     }
 
     /**
      * 根据最复杂的xpath生成简化之后的相对路径
      *
-     * @return
+     * @return 简化后的路径
      */
     public static String simplifyXpath(String xpath) {
         int index = xpath.lastIndexOf("[@");

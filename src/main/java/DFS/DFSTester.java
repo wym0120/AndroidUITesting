@@ -75,7 +75,7 @@ public class DFSTester {
             xpathStack = new Stack<>();
             generatePageNode(root, 0, nodeList);
             page.setNodeList(nodeList);
-            nodeList.stream().forEach(n -> n.setIndex(nodeList.indexOf(n)));
+            nodeList.forEach(n -> n.setIndex(nodeList.indexOf(n)));
             page.generateHashCode();
         } catch (DocumentException e) {
             e.printStackTrace();
@@ -179,7 +179,7 @@ public class DFSTester {
                 .filter(PageNode::isClickable)
                 .filter(n -> !n.isVisited())
                 .collect(Collectors.toList());
-        if (oriPage.getSpecialNode() != null) {
+        if (oriPage.getSpecialNode() != null && oriPage.getSpecialNode().getBelonging() == oriPage.getPageIndex()) {
             PageNode node = oriPage.getSpecialNode();
             clickableNodes = clickableNodes.stream()
                     .filter(n -> !(n.getClassName().equals(node.getClassName()) && n.getDepth() == node.getDepth()))
@@ -203,26 +203,40 @@ public class DFSTester {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            //检查权限和登陆
-            if (checkPermissionRequest()) Authorize();
-            if (checkLoginPage()) {
-                login();
-                return;
-            }
             //检查是否产生了新的页
-            Page pageAfterClick = generatePage();
+            //todo:防止出了bug忘记这回事，这里用过了同层次按钮筛选
+            clickableNode.setBelonging(oriPage.getPageIndex());
+            Page pageAfterClick = generatePage(clickableNode);
             int pageAfterClickHashCode = pageAfterClick.getHashcode();
             boolean isNewPageGenerated = checkGenerateNewPage(pageAfterClick);
             if (isNewPageGenerated) {
-                //出现了从没见过的页面
-                pageList.add(pageAfterClick);
-                pageAfterClick.setPageIndex(pageList.size() - 1);
-                pagePointer = pageList.indexOf(pageAfterClick);
-                if (clickTryReturn(pageAfterClick)) {
-                    element.click();
-                    return;
+                //这里要判断一下新的页是不是不该点的页，比如浏览器访问
+                //todo:非法页里面要加上各种登陆页的检测，淘宝是否要登陆还要考虑一下！！！！！！！！！！！！！！！！！！
+                //todo：业务弹窗最好每次都检查一下，尽可能去试试所有的应用里面可能的弹窗
+                if (!checkInvalidPage(pageAfterClick)) {
+                    pageList.add(pageAfterClick);
+                    pageAfterClick.setPageIndex(pageList.size() - 1);
+                    pagePointer = pageList.indexOf(pageAfterClick);
+                    if (clickTryReturn(pageAfterClick)) {
+                        //todo:这里不要第一次就直接回退了！！！！！！！！！！！！！！！！！加一点判定的逻辑，要去记录上一次点击的按钮所属的页面和新的页面是不是同一个页面，还要考虑能不能把公共组件给共享，不用重复点了
+                        //todo:关于pagenode这个对象！！！！！！！！要重写一下相等的判定，多重弹窗的问题先不处理了，就当作没有！！！！
+                        element.click();
+                        try {
+                            Thread.sleep(2000);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        return;
+                    } else {
+                        return;
+                    }
                 } else {
-                    return;
+                    driver.sendKeyEvent(4);
+                    try {
+                        Thread.sleep(2000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                 }
             } else {
                 if (pageAfterClickHashCode != oriPage.getHashcode()) {
@@ -362,5 +376,16 @@ public class DFSTester {
      */
     private void login() {
 
+    }
+
+    /**
+     * 判断是否有需要调用第三方应用的入口，如果有就是非法的
+     *
+     * @param page 点击之后的页面
+     * @return 是否非法
+     */
+    private boolean checkInvalidPage(Page page) {
+        List<PageNode> nodeList = page.getNodeList();
+        return nodeList.stream().anyMatch(n -> (n.getClassName().equals("android.widget.Button") && (n.getText().equals("始终") || n.getText().equals("总是"))));
     }
 }
