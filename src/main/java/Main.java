@@ -14,7 +14,7 @@ public class Main {
     public static void main(String[] args){
         //获取命令行参数
 //        File appPath = new File(args[0]);
-        File appPath = new File("src/main/resources/apk/IThouse.apk");
+        File appPath = new File("src/main/resources/apk/" + args[0]);
         String udid = args[1];
         String serverPort = args[2];
         int runtime = Integer.parseInt(args[3]);
@@ -62,7 +62,7 @@ public class Main {
             public Boolean call() throws Exception {
                 //生成测试用例
                 DFSTester tester = new DFSTester();
-                Thread.sleep(2000);
+                Thread.sleep(5000);
                 tester.beginDFSTest(driver,apkInfo);
                 return true;
             }

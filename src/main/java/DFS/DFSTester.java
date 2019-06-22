@@ -18,17 +18,19 @@ public class DFSTester {
     private Stack<String> xpathStack;
 
     private String packageName;
-    //很重要，用来指示哪一个页面正在被执行
+    //用来指示哪一个页面正在被执行
     private int pagePointer;
-    //当前执行页的上一页的hashcode
     private List<Page> pageList;
     private AppiumDriver driver;
     private List<PageNode> nodeList;
+    //用来处理"更多选项"的情况
+    private Stack<PageNode> moreOptionsNodeStack;
 
     public void beginDFSTest(AppiumDriver driver, ApkInfo apkInfo) {
         //初始化测试参数
         packageName = apkInfo.getPackageName();
         this.driver = driver;
+        moreOptionsNodeStack = new Stack<>();
         //初始化页面
         pageList = new ArrayList<>();
         pagePointer = 0;
@@ -39,24 +41,28 @@ public class DFSTester {
             Authorize();
             firstPage = generatePage();
         }
-        //生成页面的hashcode
         pageList.add(firstPage);
-        firstPage.setPageIndex(pageList.size() - 1);
+        int pageIndex = pageList.size() - 1;
+        firstPage.getNodeList().forEach(n -> n.setBelonging(pageIndex));
+        firstPage.setPageIndex(pageIndex);
 
         //接下来对这个page开始进行测试操作
-        //这里应该是一直循环直到没有新的页面被加进来
         int pageCountBefore = pageList.size();
         int pageCountAfter = 0;
-        //todo:这里要改一下判定的条件
-        boolean finish = pageList.stream().allMatch(Page::isFinished);
-        while (!finish) {
+        int pagePointerBefore = pagePointer;
+        int pagePointerAfter = 0;
+        while (pageCountBefore != pageCountAfter || pagePointerBefore != pagePointerAfter) {
+            pageCountBefore = pageList.size();
+            pagePointerBefore = pagePointer;
             sendEvents(pageList.get(pagePointer));
-            finish = pageList.stream().allMatch(Page::isFinished);
+            pageCountAfter = pageList.size();
+            pagePointerAfter = pagePointer;
         }
     }
 
     /**
      * 生成一个新的页面
+     *
      * @return 生成的页
      */
     private Page generatePage() {
@@ -66,8 +72,6 @@ public class DFSTester {
             Document doc = DocumentHelper.parseText(pageXMLText);
             Element root = doc.getRootElement();
             //建立新的页面
-//            page.setLoginPage(false);
-//            page.setIndex(pagePointer);
             nodeList = new ArrayList<>();
 
             //初始化xpathBuilder
@@ -98,8 +102,8 @@ public class DFSTester {
     /**
      * 生成页面上需要的结点
      *
-     * @param node 根节点
-     * @param depth 深度
+     * @param node     根节点
+     * @param depth    深度
      * @param nodeList 节点列表
      */
     private void generatePageNode(Element node, int depth, List<PageNode> nodeList) {
@@ -111,8 +115,11 @@ public class DFSTester {
         String className = node.attributeValue("class");
         String contentDesc = node.attributeValue("content-desc");
         currentNode.setClassName(className);
-        boolean isReturnButton = (className != null && className.equals("android.widget.ImageButton")) && (contentDesc != null && contentDesc.contains("上一层"));
+        //逼乎日报需要特别处理，用判断是否为首页来解决
+        boolean isReturnButton = pagePointer != 0 && (className != null && className.equals("android.widget.ImageButton")) && (contentDesc != null && contentDesc.contains("上一层"));
         boolean visible = !Boolean.parseBoolean(node.attributeValue("NAF"));
+        //一部分的应用里使用英文search Search
+        boolean isSearchButton = contentDesc != null && (contentDesc.contains("搜索") || contentDesc.contains("earch"));
 
         //xpath
         String path = generateXpath(node);
@@ -120,7 +127,7 @@ public class DFSTester {
         xpathBuilder.append("/").append(path);
 
         //判断是否能进行任何操作
-        if (visible && operational && !isReturnButton) {
+        if (operational && visible && !isReturnButton && !isSearchButton) {
             String currentNodeText = node.attributeValue("text");
             if (currentNode.isScrollable()) {
                 currentNode.setText(currentNodeText);
@@ -154,14 +161,77 @@ public class DFSTester {
      */
     private void sendEvents(Page oriPage) {
         //检查是不是登录页面，如果是登陆页那么就特殊处理
-//        boolean isLoginPage = checkLoginPage();
-//        if (isLoginPage) {
-//            System.out.println("当前是登陆页面");
-//            login();
-//            return;
-//        }
+        boolean isLoginPage = checkLoginPage();
+        if (isLoginPage) {
+            System.out.println("当前是登陆页面");
+            login();
+            return;
+        }
         List<PageNode> pageNodeList = oriPage.getNodeList();
-//        //处理可以滑动的组件
+        //处理可以点击的组件
+        List<PageNode> clickableNodes = getClickableNodeList(pageNodeList);
+        //同层次的不互相点击
+
+        //todo:这里要修改判断是否拥有同一组件的逻辑
+        PageNode specialNode = oriPage.getSpecialNode();
+        if (specialNode != null && oriPage.getNodeList().stream().anyMatch(n -> n.equals(specialNode))) {
+            clickableNodes = clickableNodes.stream()
+                    .filter(n -> !(n.getClassName().equals(specialNode.getClassName()) && n.getDepth() == specialNode.getDepth()))
+                    .collect(Collectors.toList());
+        }
+        for (PageNode clickableNode : clickableNodes) {
+            WebElement element = driver.findElementByXPath(clickableNode.getXpath());
+            boolean isMoreOptionsNode = element.getAttribute("name").contains("更多选项");
+            element.click();
+
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            //检查是否产生了新的页，并且将入口的控件记录下来
+            Page pageAfterClick = generatePage(clickableNode);
+            //特殊处理更多选项这个操作
+            if (!isMoreOptionsNode) {
+                pageList.get(oriPage.getPageIndex()).getNodeList().get(clickableNode.getIndex()).setVisited(true);
+            } else {
+                moreOptionsNodeStack.push(clickableNode);
+                pageAfterClick.setGeneratedByMoreOptionNode(true);
+            }
+            int pageAfterClickHashCode = pageAfterClick.getHashcode();
+            boolean isNewPageGenerated = checkGenerateNewPage(pageAfterClick);
+            if (isNewPageGenerated) {
+                //这里要判断一下新的页是不是不该点的页，比如浏览器访问
+                if (!checkInvalidPage(pageAfterClick)) {
+                    pageAfterClick.getNodeList().forEach(n -> n.setBelonging(pageList.size()));
+                    pageList.add(pageAfterClick);
+                    pageAfterClick.setPageIndex(pageList.size() - 1);
+                    pagePointer = pageList.indexOf(pageAfterClick);
+                    //检查是否是内部部分页面改变，借此实现已经访问过的公共组件不需要再次访问的功能
+                    if (pageAfterClick.getNodeList().stream().anyMatch(n -> n.equals(clickableNode))) {
+                        List<String> xpathVisitedList = pageList.get(oriPage.getPageIndex()).getNodeList().stream()
+                                .filter(PageNode::isVisited)
+                                .map(PageNode::getXpath)
+                                .collect(Collectors.toList());
+                        pageAfterClick.getNodeList().stream().filter(n -> xpathVisitedList.contains(n.getXpath())).forEach(n -> n.setVisited(true));
+                    }
+                    return;
+                } else {
+                    boolean returnSuccess = returnToLastPage(oriPage);
+                    if (!returnSuccess) return;
+                }
+            } else {
+                if (pageAfterClickHashCode != oriPage.getHashcode()) {
+                    //到达了访问过的页面(未必执行过)
+                    resetPagePointer(pageAfterClickHashCode);
+                    return;
+                }
+            }//还在当前页面,啥都不做继续循环
+        }
+
+        //todo:在所有的点击事件结束之后再进行滑动事件然后再次识别开始新一次的点击，但是返回的时候应该需要滑动回去，这里要想想清楚最后的代码出口
+
+        //        //处理可以滑动的组件
 //        List<PageNode> scrollableNodes = pageNodeList.stream().filter(PageNode::isScrollable).collect(Collectors.toList());
 //        JavascriptExecutor js = (JavascriptExecutor) driver;
 //        String directions[] = {"down", "up", "left", "right"};
@@ -174,81 +244,47 @@ public class DFSTester {
 //                js.executeScript("mobile: scroll", scrollObject);
 //            }
 //        }
-        //处理可以点击的组件
-        List<PageNode> clickableNodes = pageNodeList.stream()
-                .filter(PageNode::isClickable)
-                .filter(n -> !n.isVisited())
-                .collect(Collectors.toList());
-        if (oriPage.getSpecialNode() != null && oriPage.getSpecialNode().getBelonging() == oriPage.getPageIndex()) {
-            PageNode node = oriPage.getSpecialNode();
-            clickableNodes = clickableNodes.stream()
-                    .filter(n -> !(n.getClassName().equals(node.getClassName()) && n.getDepth() == node.getDepth()))
-                    .collect(Collectors.toList());
-        }
-//        List<PageNode> editTextNodes = pageNodeList.stream()
-//                .filter(n -> n.getClassName().equals("android.widget.EditText") || n.getClassName().equals("android.widget.AutoCompleteTextView"))
-//                .collect(Collectors.toList());
-        for (PageNode clickableNode : clickableNodes) {
-            WebElement element = driver.findElementByXPath(clickableNode.getXpath());
-//            for (PageNode editNode : editTextNodes) {
-//                WebElement editElement = driver.findElementByXPath(editNode.getXpath());
-//                editElement.sendKeys("abc");
-//                driver.sendKeyEvent(66);
-//                driver.hideKeyboard();
-//            }
-            pageList.get(oriPage.getPageIndex()).getNodeList().get(clickableNode.getIndex()).setVisited(true);
-            element.click();
-            try {
-                Thread.sleep(2000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            //检查是否产生了新的页
-            //todo:防止出了bug忘记这回事，这里用过了同层次按钮筛选
-            clickableNode.setBelonging(oriPage.getPageIndex());
-            Page pageAfterClick = generatePage(clickableNode);
-            int pageAfterClickHashCode = pageAfterClick.getHashcode();
-            boolean isNewPageGenerated = checkGenerateNewPage(pageAfterClick);
-            if (isNewPageGenerated) {
-                //这里要判断一下新的页是不是不该点的页，比如浏览器访问
-                //todo:非法页里面要加上各种登陆页的检测，淘宝是否要登陆还要考虑一下！！！！！！！！！！！！！！！！！！
-                //todo：业务弹窗最好每次都检查一下，尽可能去试试所有的应用里面可能的弹窗
-                if (!checkInvalidPage(pageAfterClick)) {
-                    pageList.add(pageAfterClick);
-                    pageAfterClick.setPageIndex(pageList.size() - 1);
-                    pagePointer = pageList.indexOf(pageAfterClick);
-                    if (clickTryReturn(pageAfterClick)) {
-                        //todo:这里不要第一次就直接回退了！！！！！！！！！！！！！！！！！加一点判定的逻辑，要去记录上一次点击的按钮所属的页面和新的页面是不是同一个页面，还要考虑能不能把公共组件给共享，不用重复点了
-                        //todo:关于pagenode这个对象！！！！！！！！要重写一下相等的判定，多重弹窗的问题先不处理了，就当作没有！！！！
-                        element.click();
-                        try {
-                            Thread.sleep(2000);
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        }
-                        return;
-                    } else {
-                        return;
-                    }
-                } else {
-                    driver.sendKeyEvent(4);
-                    try {
-                        Thread.sleep(2000);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-            } else {
-                if (pageAfterClickHashCode != oriPage.getHashcode()) {
-                    //到达了访问过的页面(未必执行过)
-                    resetPagePointer(pageAfterClickHashCode);
-                    return;
-                }  //还在当前页面,啥都不做继续循环
+
+        //处理更多选项点击出来的页面所有所有被访问过
+        handlePageGeneratedByMoreOptions(oriPage);
+        returnToLastPage(null);
+    }
+
+    /**
+     * 处理更多选项点击出来的页面所有所有被访问过
+     *
+     * @param oriPage 现在所在的页面
+     */
+    private void handlePageGeneratedByMoreOptions(Page oriPage) {
+        if (oriPage.isGeneratedByMoreOptionNode()) {
+            if (getClickableNodeList(pageList.get(oriPage.getPageIndex()).getNodeList()).stream().allMatch(PageNode::isVisited)) {
+                PageNode node = moreOptionsNodeStack.pop();
+                int pageIndex = node.getBelonging();
+                int nodeIndex = node.getIndex();
+                pageList.get(pageIndex).getNodeList().get(nodeIndex).setVisited(true);
             }
         }
+    }
+
+    /**
+     * 退回上一页
+     *
+     * @return 是否回到了上一页
+     */
+    private boolean returnToLastPage(Page oriPage) {
         driver.sendKeyEvent(4);
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         Page pageAfterReturn = generatePage();
+        if (oriPage != null) {
+            resetPagePointer(pageAfterReturn.getHashcode());
+            return oriPage.getHashcode() == pageAfterReturn.getHashcode();
+        }
         resetPagePointer(pageAfterReturn.getHashcode());
+        return true;
     }
 
     /**
@@ -262,46 +298,6 @@ public class DFSTester {
                 pagePointer = i;
             }
         }
-    }
-
-    /**
-     * @return 尝试回退之后的页面hashcode
-     */
-    private boolean clickTryReturn(Page pageAfterClick) {
-        //进行一次回退尝试
-        driver.sendKeyEvent(4);
-        try {
-            Thread.sleep(2000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        Page unknownPageAfterTry = generatePage();
-        int pageAfterClickHashCode = pageAfterClick.getHashcode();
-        int unknownPageHashCode = unknownPageAfterTry.getHashcode();
-        if (pageAfterClickHashCode == unknownPageHashCode) {
-            //回退失败
-            return false;
-        } else {
-            //处理多重弹窗
-            while (checkGenerateNewPage(unknownPageAfterTry)) {
-                driver.sendKeyEvent(4);
-                try {
-                    Thread.sleep(2000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                unknownPageAfterTry = generatePage();
-                //弹窗通过返回键也处理不掉或者已经回不去了
-                if (unknownPageHashCode == unknownPageAfterTry.getHashcode()) {
-                    pageList.add(unknownPageAfterTry);
-                    unknownPageAfterTry.setPageIndex(pageList.size()-1);
-                    pagePointer = pageList.indexOf(unknownPageAfterTry);
-                    return false;
-                }
-                unknownPageHashCode = unknownPageAfterTry.getHashcode();
-            }
-        }
-        return true;
     }
 
     /**
@@ -321,12 +317,12 @@ public class DFSTester {
      * @return 是否需要授权
      */
     private boolean checkPermissionRequest() {
-        String by = "new UiSelector().className(\"android.widget.Button\").textMatches(\".*允许.*|.*确认.*|.*确定.*|ok|OK|\")";
+        //todo：改变识别需要授权的页面的策略
+        String by = "new UiSelector().className(\"android.widget.Button\").textMatches(\".*允许.*|.*确认.*|.*确定.*|ok|OK|知道了\")";
         try {
             WebElement element = driver.findElementByAndroidUIAutomator(by);
             return element != null;
         } catch (NoSuchElementException e) {
-//            System.out.println("当前页面不需要授权");
         }
         return false;
     }
@@ -346,7 +342,6 @@ public class DFSTester {
                 }
             }
         } catch (NoSuchElementException e) {
-//            System.out.println("当前页面不需要授权");
         }
     }
 
@@ -356,13 +351,12 @@ public class DFSTester {
      * @return 是否有登陆按钮
      */
     private boolean checkLoginPage() {
+        //todo：改变识别登录页面的策略
         String by = "new UiSelector().className(\"android.widget.Button\").childSelector(new UiSelector().textMatches(\".*登陆.*\"))";
         try {
-//            WebElement element = driver.findElementByAndroidUIAutomator(by);
             WebElement element = driver.findElement(MobileBy.AndroidUIAutomator(by));
             return element != null;
         } catch (NoSuchElementException e) {
-//            System.out.println("当前页面不是登录页面");
         }
         return false;
     }
@@ -387,5 +381,22 @@ public class DFSTester {
     private boolean checkInvalidPage(Page page) {
         List<PageNode> nodeList = page.getNodeList();
         return nodeList.stream().anyMatch(n -> (n.getClassName().equals("android.widget.Button") && (n.getText().equals("始终") || n.getText().equals("总是"))));
+    }
+
+    /**
+     * 返回可点击的节点
+     *
+     * @param oriList 未经筛选的节点
+     * @return 可点击的节点列表
+     */
+    private List<PageNode> getClickableNodeList(List<PageNode> oriList) {
+        return oriList.stream()
+                .filter(PageNode::isClickable)
+                .filter(n -> !(n.getClassName().equals("android.widget.EditText") || n.getClassName().equals("android.widget.AutoCompleteTextView")))//这里过滤了编辑框防止弹出输入法
+                .filter(n -> !n.isVisited())
+                .filter(n -> !n.getText().contains("分享"))
+                .filter(n -> !n.getText().contains("打开"))
+                .filter(n -> !n.getText().contains("支付宝"))
+                .collect(Collectors.toList());
     }
 }

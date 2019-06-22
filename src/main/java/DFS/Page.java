@@ -15,7 +15,16 @@ public class Page {
     private int hashcode;
     //用于处理深度优先里面的同级的button相互跳转的现象
     private PageNode specialNode;
+    //用来标识这个页面是否为点击更多选项按钮之后产生的页
+    private boolean generatedByMoreOptionNode;
 
+    public boolean isGeneratedByMoreOptionNode() {
+        return generatedByMoreOptionNode;
+    }
+
+    public void setGeneratedByMoreOptionNode(boolean generatedByMoreOptionNode) {
+        this.generatedByMoreOptionNode = generatedByMoreOptionNode;
+    }
 
     public boolean isFinished() {
         return finished;
@@ -73,7 +82,7 @@ public class Page {
         String str = this.nodeList.stream()
                 .map(n->n.getClassName()+ n.getDepth())
                 .reduce("", (a, b) -> a + b);
-        System.out.println(str);
+//        System.out.println(str);
         this.hashcode = str.hashCode();
     }
 }
