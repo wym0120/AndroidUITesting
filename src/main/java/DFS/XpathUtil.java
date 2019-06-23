@@ -38,18 +38,21 @@ public class XpathUtil {
             int trueIndex = Integer.parseInt(index);
             for (int i = 0; i < nodeList.size(); i++) {
                 if (nodeList.get(i).attributeValue("index").equals(index)) {
+                    //xpath的规则这里要+1
                     trueIndex = i + 1;
                     break;
                 }
             }
             builder.append("[").append(trueIndex).append("]");
-        } else if (resourceID != null && !resourceID.equals("")) {
-            builder.append("[@resource-id='").append(resourceID).append("']");
         } else if (contentDesc != null && !contentDesc.equals("")) {
             builder.append("[@content-desc='").append(contentDesc).append("']");
         }
 
+        //resource有重复的可能性，不用
 
+//        else if (resourceID != null && !resourceID.equals("")) {
+//            builder.append("[@resource-id='").append(resourceID).append("']");
+//        }
         return builder.toString();
     }
 

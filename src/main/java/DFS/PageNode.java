@@ -24,7 +24,6 @@ public class PageNode {
 
     public boolean equals(PageNode node) {
 //        return this.depth == node.getDepth() && this.xpath.equals(node.getXpath());
-        //todo:这里要思考一下到底怎么判断两个node相等
         return this.xpath.equals(node.getXpath());
     }
 

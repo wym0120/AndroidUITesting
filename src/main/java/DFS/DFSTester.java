@@ -2,14 +2,13 @@ package DFS;
 
 import apk.ApkInfo;
 import io.appium.java_client.AppiumDriver;
-import io.appium.java_client.MobileBy;
 import org.dom4j.*;
-import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebElement;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static DFS.AuthorizationUtil.handlePermissionRequest;
 import static DFS.XpathUtil.generateXpath;
 
 public class DFSTester {
@@ -37,8 +36,7 @@ public class DFSTester {
         Page firstPage = generatePage();
 
         //第一次打开应用时候的权限检查
-        if (checkPermissionRequest()) {
-            Authorize();
+        if (handlePermissionRequest(driver, firstPage.getNodeList())) {
             firstPage = generatePage();
         }
         pageList.add(firstPage);
@@ -67,6 +65,7 @@ public class DFSTester {
      */
     private Page generatePage() {
         String pageXMLText = driver.getPageSource();
+        pageXMLText = pageXMLText.replace("&#", "");
         Page page = new Page();
         try {
             Document doc = DocumentHelper.parseText(pageXMLText);
@@ -147,8 +146,6 @@ public class DFSTester {
         List<Element> childNodes = node.elements();
         for (Element e : childNodes) {
             generatePageNode(e, depth, nodeList);
-            //深度-1
-            depth--;
             int length = xpathBuilder.length();
             xpathBuilder.delete(length - xpathStack.pop().length() - 1, length);
         }
@@ -161,72 +158,44 @@ public class DFSTester {
      */
     private void sendEvents(Page oriPage) {
         //检查是不是登录页面，如果是登陆页那么就特殊处理
-        boolean isLoginPage = checkLoginPage();
+        boolean isLoginPage = handleLoginPage();
         if (isLoginPage) {
             System.out.println("当前是登陆页面");
-            login();
             return;
         }
         List<PageNode> pageNodeList = oriPage.getNodeList();
         //处理可以点击的组件
-        List<PageNode> clickableNodes = getClickableNodeList(pageNodeList);
+        List<PageNode> highPriorityClickableNodes = getClickableNodeList(pageNodeList);
+        List<PageNode> lowPriorityClickableNodes = new ArrayList<>();
         //同层次的不互相点击
 
-        //todo:这里要修改判断是否拥有同一组件的逻辑
         PageNode specialNode = oriPage.getSpecialNode();
         if (specialNode != null && oriPage.getNodeList().stream().anyMatch(n -> n.equals(specialNode))) {
-            clickableNodes = clickableNodes.stream()
+            lowPriorityClickableNodes = new ArrayList<>(highPriorityClickableNodes);
+            highPriorityClickableNodes = highPriorityClickableNodes.stream()
                     .filter(n -> !(n.getClassName().equals(specialNode.getClassName()) && n.getDepth() == specialNode.getDepth()))
                     .collect(Collectors.toList());
+            lowPriorityClickableNodes = lowPriorityClickableNodes.stream()
+                    .filter(n -> (n.getClassName().equals(specialNode.getClassName()) && n.getDepth() == specialNode.getDepth()))
+                    .collect(Collectors.toList());
         }
-        for (PageNode clickableNode : clickableNodes) {
-            WebElement element = driver.findElementByXPath(clickableNode.getXpath());
-            boolean isMoreOptionsNode = element.getAttribute("name").contains("更多选项");
-            element.click();
 
-            try {
-                Thread.sleep(2000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            //检查是否产生了新的页，并且将入口的控件记录下来
-            Page pageAfterClick = generatePage(clickableNode);
-            //特殊处理更多选项这个操作
-            if (!isMoreOptionsNode) {
-                pageList.get(oriPage.getPageIndex()).getNodeList().get(clickableNode.getIndex()).setVisited(true);
-            } else {
-                moreOptionsNodeStack.push(clickableNode);
-                pageAfterClick.setGeneratedByMoreOptionNode(true);
-            }
-            int pageAfterClickHashCode = pageAfterClick.getHashcode();
-            boolean isNewPageGenerated = checkGenerateNewPage(pageAfterClick);
-            if (isNewPageGenerated) {
-                //这里要判断一下新的页是不是不该点的页，比如浏览器访问
-                if (!checkInvalidPage(pageAfterClick)) {
-                    pageAfterClick.getNodeList().forEach(n -> n.setBelonging(pageList.size()));
-                    pageList.add(pageAfterClick);
-                    pageAfterClick.setPageIndex(pageList.size() - 1);
-                    pagePointer = pageList.indexOf(pageAfterClick);
-                    //检查是否是内部部分页面改变，借此实现已经访问过的公共组件不需要再次访问的功能
-                    if (pageAfterClick.getNodeList().stream().anyMatch(n -> n.equals(clickableNode))) {
-                        List<String> xpathVisitedList = pageList.get(oriPage.getPageIndex()).getNodeList().stream()
-                                .filter(PageNode::isVisited)
-                                .map(PageNode::getXpath)
-                                .collect(Collectors.toList());
-                        pageAfterClick.getNodeList().stream().filter(n -> xpathVisitedList.contains(n.getXpath())).forEach(n -> n.setVisited(true));
-                    }
-                    return;
-                } else {
-                    boolean returnSuccess = returnToLastPage(oriPage);
-                    if (!returnSuccess) return;
+        //这里特殊处理一下侧边栏
+        if (packageName.equals("com.codeest.geeknews")) {
+            for (int i = 0; i < pageNodeList.size(); i++) {
+                if (pageNodeList.get(i).getXpath().equals("//android.widget.ImageButton[@content-desc='打开']")) {
+                    lowPriorityClickableNodes.add(pageNodeList.get(i));
+                    highPriorityClickableNodes.remove(pageNodeList.get(i));
                 }
-            } else {
-                if (pageAfterClickHashCode != oriPage.getHashcode()) {
-                    //到达了访问过的页面(未必执行过)
-                    resetPagePointer(pageAfterClickHashCode);
-                    return;
-                }
-            }//还在当前页面,啥都不做继续循环
+            }
+        }
+
+        //分高低优先级去访问
+        for (PageNode clickableNode : highPriorityClickableNodes) {
+            if (clickElement(oriPage, clickableNode)) return;
+        }
+        for (PageNode clickableNode : lowPriorityClickableNodes) {
+            if (clickElement(oriPage, clickableNode)) return;
         }
 
         //todo:在所有的点击事件结束之后再进行滑动事件然后再次识别开始新一次的点击，但是返回的时候应该需要滑动回去，这里要想想清楚最后的代码出口
@@ -248,6 +217,92 @@ public class DFSTester {
         //处理更多选项点击出来的页面所有所有被访问过
         handlePageGeneratedByMoreOptions(oriPage);
         returnToLastPage(null);
+    }
+
+    private WebElement findElement(PageNode node) {
+        String xpath = node.getXpath();
+        if (xpath.contains("[@text=") || xpath.contains("[content-desc=")) {
+            return driver.findElementByName(xpath.substring(xpath.indexOf("'") + 1, xpath.lastIndexOf("'")));
+        } else {
+            return driver.findElementByXPath(node.getXpath());
+        }
+    }
+
+    /**
+     * 进行点击操作
+     *
+     * @param oriPage       当前页面
+     * @param clickableNode 页面节点列表
+     * @return 是否需要结束
+     */
+    private boolean clickElement(Page oriPage, PageNode clickableNode) {
+        WebElement element = findElement(clickableNode);
+        boolean isMoreOptionsNode = element.getAttribute("name").contains("更多选项");
+        element.click();
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        //检查是否产生了新的页，并且将入口的控件记录下来
+        Page pageAfterClick = generatePage(clickableNode);
+        //检查权限要求
+        if (handlePermissionRequest(driver, pageAfterClick.getNodeList())) {
+            pageAfterClick = generatePage(clickableNode);
+        }
+
+        //特殊处理部分应用的侧边栏功能
+        if (oriPage.getPageIndex() == 0) {
+            boolean isSideBar = checkSideBar(clickableNode);
+
+        }
+
+        //特殊处理更多选项这个操作
+        if (!isMoreOptionsNode) {
+            if (oriPage.getPageIndex() == 0) {
+                boolean isSideBar = checkSideBar(clickableNode);
+                if (!isSideBar) {
+                    pageList.get(oriPage.getPageIndex()).getNodeList().get(clickableNode.getIndex()).setVisited(true);
+                }
+            } else {
+                pageList.get(oriPage.getPageIndex()).getNodeList().get(clickableNode.getIndex()).setVisited(true);
+            }
+        } else {
+            moreOptionsNodeStack.push(clickableNode);
+            pageAfterClick.setGeneratedByMoreOptionNode(true);
+        }
+
+        int pageAfterClickHashCode = pageAfterClick.getHashcode();
+        boolean isNewPageGenerated = checkGenerateNewPage(pageAfterClick);
+        if (isNewPageGenerated) {
+            //这里要判断一下新的页是不是不该点的页，比如浏览器访问
+            if (!checkInvalidPage(pageAfterClick)) {
+                pageAfterClick.getNodeList().forEach(n -> n.setBelonging(pageList.size()));
+                pageList.add(pageAfterClick);
+                pageAfterClick.setPageIndex(pageList.size() - 1);
+                pagePointer = pageList.indexOf(pageAfterClick);
+                //检查是否是内部部分页面改变，借此实现已经访问过的公共组件不需要再次访问的功能
+                if (pageAfterClick.getNodeList().stream().anyMatch(n -> n.equals(clickableNode))) {
+                    List<String> xpathVisitedList = pageList.get(oriPage.getPageIndex()).getNodeList().stream()
+                            .filter(PageNode::isVisited)
+                            .map(PageNode::getXpath)
+                            .collect(Collectors.toList());
+                    pageAfterClick.getNodeList().stream().filter(n -> xpathVisitedList.contains(n.getXpath())).forEach(n -> n.setVisited(true));
+                }
+                return true;
+            } else {
+                boolean returnSuccess = returnToLastPage(oriPage);
+                if (!returnSuccess) return true;
+            }
+        } else {
+            if (pageAfterClickHashCode != oriPage.getHashcode()) {
+                //到达了访问过的页面(未必执行过)
+                resetPagePointer(pageAfterClickHashCode);
+                return true;
+            }
+        }//还在当前页面,啥都不做继续循环
+        return false;
     }
 
     /**
@@ -312,64 +367,75 @@ public class DFSTester {
     }
 
     /**
-     * 如果有需要权限的地方就把它全部允许并且重新识别页面
+     * 如果有登陆的需求就处理登陆的需求并且做特殊的处理
      *
-     * @return 是否需要授权
+     * @return 是否有登陆的需求
      */
-    private boolean checkPermissionRequest() {
-        //todo：改变识别需要授权的页面的策略
-        String by = "new UiSelector().className(\"android.widget.Button\").textMatches(\".*允许.*|.*确认.*|.*确定.*|ok|OK|知道了\")";
-        try {
-            WebElement element = driver.findElementByAndroidUIAutomator(by);
-            return element != null;
-        } catch (NoSuchElementException e) {
-        }
-        return false;
-    }
 
-    /**
-     * 保持点击授权按钮，防止多个权限要求
-     */
-    private void Authorize() {
-        String by = "new UiSelector().className(\"android.widget.Button\").childSelector(new UiSelector().textMatches(\".*允许.*|.*确认.*|.*确定.*|ok|OK|\"))";
-        try {
-            WebElement element = driver.findElementByAndroidUIAutomator(by);
-            while (true) {
-                if (element.isDisplayed()) {
-                    element.click();
-                } else {
-                    break;
-                }
-            }
-        } catch (NoSuchElementException e) {
+    private boolean handleLoginPage() {
+        List<PageNode> res = nodeList.stream()
+                .filter(PageNode::isClickable)
+                .filter(n -> n.getClassName().equals("android.widget.Button"))
+                .filter(n -> n.getText().equals("登录") || n.getText().equals("登陆") || n.getText().equals("登陸"))
+                .collect(Collectors.toList());
+        if (res.size() != 0) {
+            login();
+            return true;
+        } else {
+            return false;
         }
-    }
-
-    /**
-     * 检查是否有登录的按钮
-     *
-     * @return 是否有登陆按钮
-     */
-    private boolean checkLoginPage() {
-        //todo：改变识别登录页面的策略
-        String by = "new UiSelector().className(\"android.widget.Button\").childSelector(new UiSelector().textMatches(\".*登陆.*\"))";
-        try {
-            WebElement element = driver.findElement(MobileBy.AndroidUIAutomator(by));
-            return element != null;
-        } catch (NoSuchElementException e) {
-        }
-        return false;
     }
 
     /**
      * 根据包名选择特定的登陆方法
-     * 登陆之后不跳回原界面
-     * 检查登陆之后的页面是否和之前的页面有重叠
-     * 有重叠就把指针指向之前的页面
-     * 没有就添加新的页面然后丢掉之前的页面
      */
     private void login() {
+        WebElement userName, password, login;
+        switch (packageName) {
+            //哔哩哔哩
+            case "com.hotbitmapgg.ohmybilibili":
+                userName = driver.findElementByName("请输入您的哔哩哔哩账号");
+                password = driver.findElementByName("请输入您的密码");
+                userName.sendKeys("123456");
+                password.sendKeys("123456");
+                driver.hideKeyboard();
+                login = driver.findElementById("com.hotbitmapgg.ohmybilibili:id/btn_login");
+                login.click();
+                break;
 
+            //IT家园
+            case "com.danmo.ithouse":
+                userName = driver.findElementByAccessibilityId("com.danmo.ithouse:id/et_login_name");
+                password = driver.findElementByAccessibilityId("com.danmo.ithouse:id/et_login_password");
+                userName.sendKeys("123456");
+                password.sendKeys("123456");
+                driver.hideKeyboard();
+                login = driver.findElementByName("登录");
+                login.click();
+                break;
+
+            case "com.wingjay.android.jianshi":
+                userName = driver.findElementByName("邮箱");
+                password = driver.findElementByName("密码");
+                userName.sendKeys("598251106@qq.com");
+                password.sendKeys("jianshimima");
+                driver.hideKeyboard();
+                login = driver.findElementByName("登录");
+                login.click();
+                break;
+            default:
+                return;
+        }
+
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        Page page = generatePage();
+        pageList.add(page);
+        page.setPageIndex(pageList.size() - 1);
+        pagePointer = pageList.size() - 1;
     }
 
     /**
@@ -380,7 +446,26 @@ public class DFSTester {
      */
     private boolean checkInvalidPage(Page page) {
         List<PageNode> nodeList = page.getNodeList();
-        return nodeList.stream().anyMatch(n -> (n.getClassName().equals("android.widget.Button") && (n.getText().equals("始终") || n.getText().equals("总是"))));
+        boolean judge0 = nodeList.stream().anyMatch(n -> (n.getClassName().equals("android.widget.Button") && (n.getText().equals("始终") || n.getText().equals("总是"))));
+        boolean judge1 = nodeList.stream().anyMatch(n -> (n.getClassName().equals("android.widget.Button") && (n.getText().equals("发送给朋友"))));
+        return judge0 || judge1;
+    }
+
+    /**
+     * 特殊的应用里面需要处理侧边栏
+     * 目前有这个需要的是geeknews
+     *
+     * @param node 要点击的元素
+     * @return 这个元素是否为侧边栏
+     */
+    private boolean checkSideBar(PageNode node) {
+        switch (packageName) {
+            case "com.codeest.geeknews":
+                return node.getXpath().equals("//android.widget.ImageButton[@content-desc='打开']");
+            default:
+                break;
+        }
+        return false;
     }
 
     /**
@@ -395,7 +480,9 @@ public class DFSTester {
                 .filter(n -> !(n.getClassName().equals("android.widget.EditText") || n.getClassName().equals("android.widget.AutoCompleteTextView")))//这里过滤了编辑框防止弹出输入法
                 .filter(n -> !n.isVisited())
                 .filter(n -> !n.getText().contains("分享"))
-                .filter(n -> !n.getText().contains("打开"))
+                .filter(n -> !n.getText().contains("打开浏览器"))
+                .filter(n -> !n.getText().contains("夜间模式"))
+                .filter(n -> !n.getText().contains("日间模式"))
                 .filter(n -> !n.getText().contains("支付宝"))
                 .collect(Collectors.toList());
     }
