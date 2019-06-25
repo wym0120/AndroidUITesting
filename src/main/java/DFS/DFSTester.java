@@ -9,6 +9,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import static DFS.AuthorizationUtil.handlePermissionRequest;
+import static DFS.ScrollUtil.*;
 import static DFS.XpathUtil.generateXpath;
 
 public class DFSTester {
@@ -133,9 +134,16 @@ public class DFSTester {
             if (currentNode.isScrollable()) {
                 currentNode.setText(currentNodeText);
             } else {
-                List<Element> child = node.elements();
-                String totalText = child.stream().map(n -> n.attribute("text").getValue()).reduce(currentNodeText, (a, b) -> a + b);
-                currentNode.setText(totalText);
+
+                //todo:处理一下生成text的逻辑
+//                List<Element> child = node.elements();
+//                String totalText = child.stream().map(n -> n.attribute("text").getValue()).reduce(currentNodeText, (a, b) -> a + b);
+                if (currentNodeText == null || currentNodeText.equals("")) {
+                    String totalText = node.getStringValue();
+                    currentNode.setText(currentNodeText + totalText);
+                } else {
+                    currentNode.setText(currentNodeText);
+                }
             }
 
             currentNode.setXpath(XpathUtil.simplifyXpath(xpathBuilder.toString()));
@@ -200,34 +208,90 @@ public class DFSTester {
             }
         }
 
-        //分高低优先级去访问
+        //处理高优先级
         for (PageNode clickableNode : highPriorityClickableNodes) {
-            if (clickElement(oriPage, clickableNode)) return;
+            if (clickElement(oriPage, clickableNode, true)) return;
         }
+
+        //处理可以滑动的组件
+        List<PageNode> verticalScrollableNodes = pageNodeList.stream()
+                .filter(PageNode::isScrollable)
+                .filter(n -> !n.getClassName().equals("android.widget.HorizontalScrollView"))
+                .collect(Collectors.toList());
+        List<PageNode> horizonScrollableNodes = pageNodeList.stream()
+                .filter(PageNode::isScrollable)
+                .filter(n -> n.getClassName().equals("android.widget.HorizontalScrollView"))
+                .collect(Collectors.toList());
+        for (PageNode node : horizonScrollableNodes) {
+            int times = 5;
+            WebElement element = findElement(node);
+            for (int i = 0; i < times; i++) {
+                moveToRight(driver, element);
+                Page page = generatePage();
+                page.setPageIndex(oriPage.getPageIndex());
+                List<PageNode> newClickableNodeList = page.getNodeList().stream().filter(PageNode::isClickable).collect(Collectors.toList());
+                List<PageNode> oriClickableNodeList = pageNodeList.stream().filter(PageNode::isClickable).collect(Collectors.toList());
+                newClickableNodeList = newClickableNodeList.stream().filter(n -> isNewClickableNode(n, oriClickableNodeList)).collect(Collectors.toList());
+                for (PageNode clickableNode : newClickableNodeList) {
+                    if (clickElement(page, clickableNode, false)) return;
+                }
+            }
+            for (int i = 0; i < times; i++) {
+                moveToLeft(driver, element);
+            }
+        }
+
+        for (PageNode node : verticalScrollableNodes) {
+            int times = 5;
+            WebElement element = findElement(node);
+            for (int i = 0; i < times; i++) {
+                moveToDown(driver, element);
+                Page page = generatePage();
+                page.setPageIndex(oriPage.getPageIndex());
+                List<PageNode> newClickableNodeList = page.getNodeList().stream().filter(PageNode::isClickable).collect(Collectors.toList());
+                List<PageNode> oriClickableNodeList = pageNodeList.stream().filter(PageNode::isClickable).collect(Collectors.toList());
+                newClickableNodeList = newClickableNodeList.stream().filter(n -> isNewClickableNode(n, oriClickableNodeList)).collect(Collectors.toList());
+                for (PageNode clickableNode : newClickableNodeList) {
+                    if (clickElement(page, clickableNode, false)) return;
+                }
+            }
+            for (int i = 0; i < times; i++) {
+                moveToUp(driver, element);
+            }
+        }
+
+        //处理低优先级
         for (PageNode clickableNode : lowPriorityClickableNodes) {
-            if (clickElement(oriPage, clickableNode)) return;
+            if (clickElement(oriPage, clickableNode, true)) return;
         }
 
         //理更多选项点击出来的页面所有所有被访问过
         handlePageGeneratedByMoreOptions(oriPage);
 
-        //        //处理可以滑动的组件
-//        List<PageNode> scrollableNodes = pageNodeList.stream().filter(PageNode::isScrollable).collect(Collectors.toList());
-//        JavascriptExecutor js = (JavascriptExecutor) driver;
-//        String directions[] = {"down", "up", "left", "right"};
-//        for (PageNode scrollableNode : scrollableNodes) {
-//            WebElement element = driver.findElementByXPath(scrollableNode.getXpath());
-//            HashMap<String, String> scrollObject = new HashMap<>();
-//            for (String direction : directions) {
-//                scrollObject.put("direction", direction);
-//                scrollObject.put("element", ((RemoteWebElement) element).getId());
-//                js.executeScript("mobile: scroll", scrollObject);
-//            }
-//        }
-        returnToLastPage(null);
 
+        returnToLastPage(null);
     }
 
+    /**
+     * 判断下滑之后产生的节点是否和原来的有重复，真正的新的节点不应该包括在原来的那些里面
+     *
+     * @param node                 节点
+     * @param oriClickableNodeList 原有的可以点击的节点列表
+     * @return 是否为真的新生成的节点
+     */
+    private boolean isNewClickableNode(PageNode node, List<PageNode> oriClickableNodeList) {
+        for (PageNode tmp : oriClickableNodeList) {
+            if (tmp.equals(node)) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 不同的查找方式
+     *
+     * @param node 节点
+     * @return webelement元素
+     */
     private WebElement findElement(PageNode node) {
         String xpath = node.getXpath();
         if (xpath.contains("[@text=") || xpath.contains("[content-desc=")) {
@@ -244,12 +308,12 @@ public class DFSTester {
      * @param clickableNode 页面节点列表
      * @return 是否需要结束
      */
-    private boolean clickElement(Page oriPage, PageNode clickableNode) {
+    private boolean clickElement(Page oriPage, PageNode clickableNode,boolean needRecorded) {
         WebElement element = findElement(clickableNode);
         boolean isMoreOptionsNode = checkMoreOptionNode(element);
         element.click();
         try {
-            Thread.sleep(500);
+            Thread.sleep(4000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -265,13 +329,9 @@ public class DFSTester {
         if (!isMoreOptionsNode) {
             //判断侧边栏
             boolean isSideBar = checkSideBar(clickableNode);
-            if (!isSideBar) {
+            if (!isSideBar && needRecorded) {
                 pageList.get(oriPage.getPageIndex()).getNodeList().get(clickableNode.getIndex()).setVisited(true);
             }
-//            if (oriPage.getPageIndex() == 0) {
-//            } else {
-//                pageList.get(oriPage.getPageIndex()).getNodeList().get(clickableNode.getIndex()).setVisited(true);
-//            }
         } else {
             moreOptionsNodeStack.push(clickableNode);
             pageAfterClick.setGeneratedByMoreOptionNode(true);
@@ -300,7 +360,7 @@ public class DFSTester {
                 return true;
             } else {
                 boolean returnSuccess = returnToLastPage(oriPage);
-                if (!returnSuccess) return true;
+                return !returnSuccess;
             }
         } else {
             if (pageAfterClickHashCode != oriPage.getHashcode()) {
@@ -336,7 +396,7 @@ public class DFSTester {
     private boolean returnToLastPage(Page oriPage) {
         driver.sendKeyEvent(4);
         try {
-            Thread.sleep(500);
+            Thread.sleep(4000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -435,7 +495,7 @@ public class DFSTester {
         }
 
         try {
-            Thread.sleep(500);
+            Thread.sleep(4000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -454,7 +514,10 @@ public class DFSTester {
     private boolean checkInvalidPage(Page page) {
         List<PageNode> nodeList = page.getNodeList();
         boolean judge0 = nodeList.stream().anyMatch(n -> (n.getClassName().equals("android.widget.Button") && (n.getText().equals("始终") || n.getText().equals("总是"))));
-        boolean judge1 = nodeList.stream().anyMatch(n -> (n.getClassName().equals("android.widget.Button") && (n.getText().equals("发送给朋友"))));
+        boolean judge1 = nodeList.stream().anyMatch(n -> n.getText().equals("发送给朋友") ||
+                n.getText().equals("备忘录") ||
+                n.getText().equals("信息") ||
+                n.getText().equals("蓝牙"));
         boolean judge2 = nodeList.stream().anyMatch(n -> n.getClassName().equals("android.webkit.WebView"));
         return judge0 || judge1 || judge2;
     }
@@ -482,7 +545,7 @@ public class DFSTester {
      * 判断这个节点是否是更多选项的节点
      *
      * @param element 节点
-     * @return
+     * @return 是否为更多选项的点
      */
     private boolean checkMoreOptionNode(WebElement element) {
 //        String id = element.getAttribute("id");
