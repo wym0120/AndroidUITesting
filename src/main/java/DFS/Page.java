@@ -80,7 +80,7 @@ public class Page {
 
     public void generateHashCode(){
         String str = this.nodeList.stream()
-                .map(n->n.getClassName()+ n.getDepth())
+                .map(n -> n.getClassName() + n.getDepth() + n.getText())
                 .reduce("", (a, b) -> a + b);
 //        System.out.println(str);
         this.hashcode = str.hashCode();

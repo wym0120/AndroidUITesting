@@ -115,7 +115,9 @@ public class DFSTester {
         String contentDesc = node.attributeValue("content-desc");
         currentNode.setClassName(className);
         //逼乎日报需要特别处理，用判断是否为首页来解决
-        boolean isReturnButton = pagePointer != 0 && (className != null && className.equals("android.widget.ImageButton")) && (contentDesc != null && contentDesc.contains("上一层"));
+        boolean isReturnButton = pagePointer != 0 &&
+                (className != null && className.equals("android.widget.ImageButton"))
+                && (contentDesc != null && (contentDesc.contains("上一层") || contentDesc.equals("Navigate up")));
         boolean visible = !Boolean.parseBoolean(node.attributeValue("NAF"));
         //一部分的应用里使用英文search Search
         boolean isSearchButton = contentDesc != null && (contentDesc.contains("搜索") || contentDesc.contains("earch"));
@@ -167,8 +169,8 @@ public class DFSTester {
         //处理可以点击的组件
         List<PageNode> highPriorityClickableNodes = getClickableNodeList(pageNodeList);
         List<PageNode> lowPriorityClickableNodes = new ArrayList<>();
-        //同层次的不互相点击
 
+        //同层次的不互相点击
         PageNode specialNode = oriPage.getSpecialNode();
         if (specialNode != null && oriPage.getNodeList().stream().anyMatch(n -> n.equals(specialNode))) {
             lowPriorityClickableNodes = new ArrayList<>(highPriorityClickableNodes);
@@ -184,8 +186,16 @@ public class DFSTester {
         if (packageName.equals("com.codeest.geeknews")) {
             for (int i = 0; i < pageNodeList.size(); i++) {
                 if (pageNodeList.get(i).getXpath().equals("//android.widget.ImageButton[@content-desc='打开']")) {
-                    lowPriorityClickableNodes.add(pageNodeList.get(i));
+                    if (oriPage.getPageIndex() == 0) {
+                        List<PageNode> tmp = new ArrayList<>();
+                        tmp.add(pageNodeList.get(i));
+                        tmp.addAll(lowPriorityClickableNodes);
+                        lowPriorityClickableNodes = tmp;
+                    } else {
+                        lowPriorityClickableNodes.add(pageNodeList.get(i));
+                    }
                     highPriorityClickableNodes.remove(pageNodeList.get(i));
+                    break;
                 }
             }
         }
@@ -198,7 +208,8 @@ public class DFSTester {
             if (clickElement(oriPage, clickableNode)) return;
         }
 
-        //todo:在所有的点击事件结束之后再进行滑动事件然后再次识别开始新一次的点击，但是返回的时候应该需要滑动回去，这里要想想清楚最后的代码出口
+        //理更多选项点击出来的页面所有所有被访问过
+        handlePageGeneratedByMoreOptions(oriPage);
 
         //        //处理可以滑动的组件
 //        List<PageNode> scrollableNodes = pageNodeList.stream().filter(PageNode::isScrollable).collect(Collectors.toList());
@@ -213,10 +224,8 @@ public class DFSTester {
 //                js.executeScript("mobile: scroll", scrollObject);
 //            }
 //        }
-
-        //处理更多选项点击出来的页面所有所有被访问过
-        handlePageGeneratedByMoreOptions(oriPage);
         returnToLastPage(null);
+
     }
 
     private WebElement findElement(PageNode node) {
@@ -237,10 +246,10 @@ public class DFSTester {
      */
     private boolean clickElement(Page oriPage, PageNode clickableNode) {
         WebElement element = findElement(clickableNode);
-        boolean isMoreOptionsNode = element.getAttribute("name").contains("更多选项");
+        boolean isMoreOptionsNode = checkMoreOptionNode(element);
         element.click();
         try {
-            Thread.sleep(2000);
+            Thread.sleep(500);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -252,22 +261,17 @@ public class DFSTester {
             pageAfterClick = generatePage(clickableNode);
         }
 
-        //特殊处理部分应用的侧边栏功能
-        if (oriPage.getPageIndex() == 0) {
-            boolean isSideBar = checkSideBar(clickableNode);
-
-        }
-
         //特殊处理更多选项这个操作
         if (!isMoreOptionsNode) {
-            if (oriPage.getPageIndex() == 0) {
-                boolean isSideBar = checkSideBar(clickableNode);
-                if (!isSideBar) {
-                    pageList.get(oriPage.getPageIndex()).getNodeList().get(clickableNode.getIndex()).setVisited(true);
-                }
-            } else {
+            //判断侧边栏
+            boolean isSideBar = checkSideBar(clickableNode);
+            if (!isSideBar) {
                 pageList.get(oriPage.getPageIndex()).getNodeList().get(clickableNode.getIndex()).setVisited(true);
             }
+//            if (oriPage.getPageIndex() == 0) {
+//            } else {
+//                pageList.get(oriPage.getPageIndex()).getNodeList().get(clickableNode.getIndex()).setVisited(true);
+//            }
         } else {
             moreOptionsNodeStack.push(clickableNode);
             pageAfterClick.setGeneratedByMoreOptionNode(true);
@@ -288,7 +292,10 @@ public class DFSTester {
                             .filter(PageNode::isVisited)
                             .map(PageNode::getXpath)
                             .collect(Collectors.toList());
-                    pageAfterClick.getNodeList().stream().filter(n -> xpathVisitedList.contains(n.getXpath())).forEach(n -> n.setVisited(true));
+                    pageAfterClick.getNodeList().stream()
+                            .filter(n -> !(n.getDepth() == clickableNode.getDepth() && n.getClassName().equals(clickableNode.getClassName())))
+                            .filter(n -> xpathVisitedList.contains(n.getXpath()))
+                            .forEach(n -> n.setVisited(true));
                 }
                 return true;
             } else {
@@ -329,7 +336,7 @@ public class DFSTester {
     private boolean returnToLastPage(Page oriPage) {
         driver.sendKeyEvent(4);
         try {
-            Thread.sleep(2000);
+            Thread.sleep(500);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -407,8 +414,8 @@ public class DFSTester {
             case "com.danmo.ithouse":
                 userName = driver.findElementByAccessibilityId("com.danmo.ithouse:id/et_login_name");
                 password = driver.findElementByAccessibilityId("com.danmo.ithouse:id/et_login_password");
-                userName.sendKeys("123456");
-                password.sendKeys("123456");
+                userName.sendKeys("18251830730");
+                password.sendKeys("mima123456");
                 driver.hideKeyboard();
                 login = driver.findElementByName("登录");
                 login.click();
@@ -428,7 +435,7 @@ public class DFSTester {
         }
 
         try {
-            Thread.sleep(2000);
+            Thread.sleep(500);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -448,7 +455,8 @@ public class DFSTester {
         List<PageNode> nodeList = page.getNodeList();
         boolean judge0 = nodeList.stream().anyMatch(n -> (n.getClassName().equals("android.widget.Button") && (n.getText().equals("始终") || n.getText().equals("总是"))));
         boolean judge1 = nodeList.stream().anyMatch(n -> (n.getClassName().equals("android.widget.Button") && (n.getText().equals("发送给朋友"))));
-        return judge0 || judge1;
+        boolean judge2 = nodeList.stream().anyMatch(n -> n.getClassName().equals("android.webkit.WebView"));
+        return judge0 || judge1 || judge2;
     }
 
     /**
@@ -462,10 +470,29 @@ public class DFSTester {
         switch (packageName) {
             case "com.codeest.geeknews":
                 return node.getXpath().equals("//android.widget.ImageButton[@content-desc='打开']");
+            case "com.xiecc.seeWeather":
+                return node.getXpath().equals("//android.widget.ImageButton[@content-desc='Open navigation drawer']");
             default:
                 break;
         }
         return false;
+    }
+
+    /**
+     * 判断这个节点是否是更多选项的节点
+     *
+     * @param element 节点
+     * @return
+     */
+    private boolean checkMoreOptionNode(WebElement element) {
+//        String id = element.getAttribute("id");
+        String name = element.getAttribute("name");
+        boolean judge0 = name.contains("更多选项");
+//        boolean judge1 = id!=null && id.equals("com.codeest.geeknews:id/iv_vtex_menu");
+//        return judge0||judge1;
+
+
+        return judge0;
     }
 
     /**
