@@ -3,6 +3,7 @@ package DFS;
 import apk.ApkInfo;
 import io.appium.java_client.AppiumDriver;
 import org.dom4j.*;
+import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 
 import java.util.*;
@@ -112,9 +113,13 @@ public class DFSTester {
         currentNode.setClickable(Boolean.parseBoolean(node.attributeValue("clickable")));
         currentNode.setScrollable(Boolean.parseBoolean(node.attributeValue("scrollable")));
         boolean operational = currentNode.isClickable() || currentNode.isScrollable();
-        String className = node.attributeValue("class");
-        String contentDesc = node.attributeValue("content-desc");
-        currentNode.setClassName(className);
+        String path = generateXpath(node, currentNode);
+
+//        String className = node.attributeValue("class");
+//        String contentDesc = node.attributeValue("content-desc");
+//        currentNode.setClassName(className);
+        String className = currentNode.getClassName();
+        String contentDesc = currentNode.getContentDesc();
         //逼乎日报需要特别处理，用判断是否为首页来解决
         boolean isReturnButton = pagePointer != 0 &&
                 (className != null && className.equals("android.widget.ImageButton"))
@@ -124,7 +129,6 @@ public class DFSTester {
         boolean isSearchButton = contentDesc != null && (contentDesc.contains("搜索") || contentDesc.contains("earch"));
 
         //xpath
-        String path = generateXpath(node);
         xpathStack.push(path);
         xpathBuilder.append("/").append(path);
 
@@ -134,19 +138,15 @@ public class DFSTester {
             if (currentNode.isScrollable()) {
                 currentNode.setText(currentNodeText);
             } else {
-
-                //todo:处理一下生成text的逻辑
-//                List<Element> child = node.elements();
-//                String totalText = child.stream().map(n -> n.attribute("text").getValue()).reduce(currentNodeText, (a, b) -> a + b);
                 if (currentNodeText == null || currentNodeText.equals("")) {
-                    String totalText = node.getStringValue();
-                    currentNode.setText(currentNodeText + totalText);
+                    String totalText = getTotalText(node);
+                    currentNode.setText(totalText);
                 } else {
                     currentNode.setText(currentNodeText);
                 }
             }
 
-            currentNode.setXpath(XpathUtil.simplifyXpath(xpathBuilder.toString()));
+            currentNode.setXpath(xpathBuilder.toString());
             //加入list中
             nodeList.add(currentNode);
         }
@@ -159,6 +159,28 @@ public class DFSTester {
             int length = xpathBuilder.length();
             xpathBuilder.delete(length - xpathStack.pop().length() - 1, length);
         }
+    }
+
+
+    /**
+     * 获取该节点的子节点的文本，只要获取第一个非空
+     *
+     * @param root 节点
+     * @return 文本
+     */
+    private String getTotalText(Element root) {
+        Stack<Element> stack = new Stack<>();
+        stack.push(root);
+        while (!stack.isEmpty()) {
+            Element tmp = stack.pop();
+            String text = tmp.attributeValue("text");
+            if (text != null && !text.equals("")) return text;
+            List<Element> child = tmp.elements();
+            for (Element element : child) {
+                stack.push(element);
+            }
+        }
+        return "";
     }
 
     /**
@@ -227,14 +249,12 @@ public class DFSTester {
             WebElement element = findElement(node);
             for (int i = 0; i < times; i++) {
                 moveToRight(driver, element);
-                Page page = generatePage();
-                page.setPageIndex(oriPage.getPageIndex());
-                List<PageNode> newClickableNodeList = page.getNodeList().stream().filter(PageNode::isClickable).collect(Collectors.toList());
-                List<PageNode> oriClickableNodeList = pageNodeList.stream().filter(PageNode::isClickable).collect(Collectors.toList());
-                newClickableNodeList = newClickableNodeList.stream().filter(n -> isNewClickableNode(n, oriClickableNodeList)).collect(Collectors.toList());
-                for (PageNode clickableNode : newClickableNodeList) {
-                    if (clickElement(page, clickableNode, false)) return;
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
+                if (clickAfterSwipe(oriPage, pageNodeList)) return;
             }
             for (int i = 0; i < times; i++) {
                 moveToLeft(driver, element);
@@ -246,14 +266,12 @@ public class DFSTester {
             WebElement element = findElement(node);
             for (int i = 0; i < times; i++) {
                 moveToDown(driver, element);
-                Page page = generatePage();
-                page.setPageIndex(oriPage.getPageIndex());
-                List<PageNode> newClickableNodeList = page.getNodeList().stream().filter(PageNode::isClickable).collect(Collectors.toList());
-                List<PageNode> oriClickableNodeList = pageNodeList.stream().filter(PageNode::isClickable).collect(Collectors.toList());
-                newClickableNodeList = newClickableNodeList.stream().filter(n -> isNewClickableNode(n, oriClickableNodeList)).collect(Collectors.toList());
-                for (PageNode clickableNode : newClickableNodeList) {
-                    if (clickElement(page, clickableNode, false)) return;
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
+                if (clickAfterSwipe(oriPage, pageNodeList)) return;
             }
             for (int i = 0; i < times; i++) {
                 moveToUp(driver, element);
@@ -270,6 +288,18 @@ public class DFSTester {
 
 
         returnToLastPage(null);
+    }
+
+    private boolean clickAfterSwipe(Page oriPage, List<PageNode> pageNodeList) {
+        Page page = generatePage();
+        page.setPageIndex(oriPage.getPageIndex());
+        List<PageNode> newClickableNodeList = page.getNodeList().stream().filter(PageNode::isClickable).collect(Collectors.toList());
+        List<PageNode> oriClickableNodeList = pageNodeList.stream().filter(PageNode::isClickable).collect(Collectors.toList());
+        newClickableNodeList = newClickableNodeList.stream().filter(n -> isNewClickableNode(n, oriClickableNodeList)).collect(Collectors.toList());
+        for (PageNode clickableNode : newClickableNodeList) {
+            if (clickElement(page, clickableNode, false)) return true;
+        }
+        return false;
     }
 
     /**
@@ -293,12 +323,20 @@ public class DFSTester {
      * @return webelement元素
      */
     private WebElement findElement(PageNode node) {
-        String xpath = node.getXpath();
-        if (xpath.contains("[@text=") || xpath.contains("[content-desc=")) {
-            return driver.findElementByName(xpath.substring(xpath.indexOf("'") + 1, xpath.lastIndexOf("'")));
-        } else {
-            return driver.findElementByXPath(node.getXpath());
+        List<WebElement> res = new ArrayList<>();
+        if (node.getXpathText() != null && !node.getXpathText().equals("")) {
+            res = driver.findElements(By.name(node.getXpathText()));
+            if (res.size() == 1) return res.get(0);
         }
+        if (node.getContentDesc() != null && !node.getContentDesc().equals("")) {
+            res = driver.findElementsByAccessibilityId(node.getContentDesc());
+            if (res.size() == 1) return res.get(0);
+        }
+        if (node.getResourceID() != null && !node.getResourceID().equals("")) {
+            res = driver.findElementsById(node.getResourceID());
+            if (res.size() == 1) return res.get(0);
+        }
+        return driver.findElementByXPath(node.getXpath());
     }
 
     /**
@@ -313,10 +351,11 @@ public class DFSTester {
         boolean isMoreOptionsNode = checkMoreOptionNode(element);
         element.click();
         try {
-            Thread.sleep(4000);
+            Thread.sleep(2000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
+//        driver.manage().timeouts().implicitlyWait(30, TimeUnit.SECONDS);
 
         //检查是否产生了新的页，并且将入口的控件记录下来
         Page pageAfterClick = generatePage(clickableNode);
@@ -396,16 +435,22 @@ public class DFSTester {
     private boolean returnToLastPage(Page oriPage) {
         driver.sendKeyEvent(4);
         try {
-            Thread.sleep(4000);
+            Thread.sleep(2000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
         Page pageAfterReturn = generatePage();
-        if (oriPage != null) {
+        if (pageList.stream().anyMatch(p -> p.getHashcode() == pageAfterReturn.getHashcode())) {
             resetPagePointer(pageAfterReturn.getHashcode());
-            return oriPage.getHashcode() == pageAfterReturn.getHashcode();
+        } else {
+            driver.sendKeyEvent(4);
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            resetPagePointer(pageAfterReturn.getHashcode());
         }
-        resetPagePointer(pageAfterReturn.getHashcode());
         return true;
     }
 
@@ -495,7 +540,7 @@ public class DFSTester {
         }
 
         try {
-            Thread.sleep(4000);
+            Thread.sleep(2000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }

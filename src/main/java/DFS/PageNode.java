@@ -7,24 +7,49 @@ public class PageNode {
     private int index;
     //当前节点深度
     private int depth;
-    //文本内容
+    //包括了子组件的文本内容
     private String text;
+    private String resourceID;
+    private String contentDesc;
+    //用于xpath的text
+    private String xpathText;
     //类名,后续的行为基本按照这个类名来进行
     private String className;
     //可点击
     private boolean clickable;
     //可滑动
     private boolean scrollable;
-    //可选择
-    private boolean selected;
     //xpath
     private String xpath;
     //是否已经被访问过
     private boolean visited;
 
     public boolean equals(PageNode node) {
-//        return this.depth == node.getDepth() && this.xpath.equals(node.getXpath());
         return this.xpath.equals(node.getXpath());
+    }
+
+    public String getResourceID() {
+        return resourceID;
+    }
+
+    public void setResourceID(String resourceID) {
+        this.resourceID = resourceID;
+    }
+
+    public String getContentDesc() {
+        return contentDesc;
+    }
+
+    public void setContentDesc(String contentDesc) {
+        this.contentDesc = contentDesc;
+    }
+
+    public String getXpathText() {
+        return xpathText;
+    }
+
+    public void setXpathText(String xpathText) {
+        this.xpathText = xpathText;
     }
 
     public int getBelonging() {
@@ -97,13 +122,5 @@ public class PageNode {
 
     public void setScrollable(boolean scrollable) {
         this.scrollable = scrollable;
-    }
-
-    public boolean isSelected() {
-        return selected;
-    }
-
-    public void setSelected(boolean selected) {
-        this.selected = selected;
     }
 }

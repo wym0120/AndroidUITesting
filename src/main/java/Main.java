@@ -22,13 +22,13 @@ public class Main {
         ApkUtil apkUtil = new ApkUtil();
         ApkInfo apkInfo = apkUtil.parseApk(appPath.getAbsolutePath());
         //初始化appium
-        initAppiumTest(appPath,udid,serverPort,apkInfo);
+        initAppiumTest(appPath, udid, serverPort, apkInfo, runtime);
         //执行测试
         autoTest(runtime,apkInfo);
 
     }
 
-    public static AppiumDriver initAppiumTest(File appPath,String udid,String serverPort,ApkInfo apkInfo){
+    public static AppiumDriver initAppiumTest(File appPath, String udid, String serverPort, ApkInfo apkInfo, int runtime) {
         DesiredCapabilities capabilities = new DesiredCapabilities();
         capabilities.setCapability("deviceName","myPhone");
         capabilities.setCapability("platformName", "Android");
@@ -42,9 +42,8 @@ public class Main {
         capabilities.setCapability("unicodeKeyboard", true);
         //重置键盘
         capabilities.setCapability("resetKeyboard", true);
-
-        //todo:这个最后要清理掉
-        capabilities.setCapability("newCommandTimeout", 300);
+        //设置session持续时间
+        capabilities.setCapability("newCommandTimeout", runtime);
 
         String url = "http://127.0.0.1:"+serverPort+"/wd/hub";
         try {

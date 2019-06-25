@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 public class AuthorizationUtil {
-//    private static String[] permissionRequestKeys = {"允许","始终允许","确定","确认","ok","OK","知道了"};
 
     /**
      * 如果有需要权限的地方就把它全部允许并且重新识别页面

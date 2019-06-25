@@ -13,25 +13,16 @@ public class XpathUtil {
      * @param element 节点
      * @return xpath
      */
-    public static String generateXpath(Element element) {
+    public static String generateXpath(Element element, PageNode currentNode) {
         StringBuilder builder = new StringBuilder();
-        String className = element.attributeValue("class");
-        if (className != null) {
-            //对特殊符号特别处理
-            if (!className.contains("$")) {
-                builder.append(className);
-            } else {
-                builder.append(className.replace('$', '.'));
-
-            }
-        }
+        String className = element.attributeValue("class") == null ? "" : element.attributeValue("class").replace('$', '.');
+        builder.append(className);
+        currentNode.setClassName(className);
         String resourceID = element.attributeValue("resource-id");
         String contentDesc = element.attributeValue("content-desc");
         String text = element.attributeValue("text");
         String index = element.attributeValue("index");
-        if (text != null && !text.equals("")) {
-            builder.append("[@text='").append(text).append("']");
-        } else if (index != null && !index.equals("0")) {
+        if (index != null && !index.equals("0")) {
             //获得相对的Index
             List<Element> nodeList = element.getParent().elements();
             nodeList = nodeList.stream().filter(n -> n.attributeValue("class").equals(className)).collect(Collectors.toList());
@@ -44,34 +35,17 @@ public class XpathUtil {
                 }
             }
             builder.append("[").append(trueIndex).append("]");
-        } else if (contentDesc != null && !contentDesc.equals("")) {
-            builder.append("[@content-desc='").append(contentDesc).append("']");
         }
-
-        //resource有重复的可能性，不用
-
-//        else if (resourceID != null && !resourceID.equals("")) {
-//            builder.append("[@resource-id='").append(resourceID).append("']");
-//        }
+        //顺便把节点的属性给设置了
+        if (text != null && !text.equals("")) {
+            currentNode.setXpathText(text);
+        }
+        if (contentDesc != null && !contentDesc.equals("")) {
+            currentNode.setContentDesc(contentDesc);
+        }
+        if (resourceID != null && !resourceID.equals("")) {
+            currentNode.setResourceID(resourceID);
+        }
         return builder.toString();
-    }
-
-    /**
-     * 根据最复杂的xpath生成简化之后的相对路径
-     *
-     * @return 简化后的路径
-     */
-    public static String simplifyXpath(String xpath) {
-        int index = xpath.lastIndexOf("[@");
-        if (index != -1) {
-            int j = index;
-            while (xpath.charAt(j) != '/') {
-                j--;
-            }
-            xpath = "/" + xpath.substring(j);
-            return xpath;
-        } else {
-            return xpath;
-        }
     }
 }
