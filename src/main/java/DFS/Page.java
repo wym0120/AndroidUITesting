@@ -52,7 +52,8 @@ public class Page {
 
     public void generateHashCode() {
         String str = this.nodeList.stream()
-                .map(n -> n.getClassName() + n.getDepth() + n.getText())
+                .map(n -> n.getClassName() + n.getDepth())
+//                .map(n -> n.getClassName() + n.getDepth() + n.getText())
                 .reduce("", (a, b) -> a + b);
         this.hashcode = str.hashCode();
     }

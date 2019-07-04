@@ -3,6 +3,7 @@ import apk.ApkInfo;
 import apk.ApkUtil;
 import io.appium.java_client.AppiumDriver;
 import org.openqa.selenium.remote.DesiredCapabilities;
+
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -37,7 +38,9 @@ public class Main {
         capabilities.setCapability("appPackage", apkInfo.getPackageName());
         capabilities.setCapability("appActivity", apkInfo.getLaunchActivity());
         capabilities.setCapability("noSign", "true");
+        capabilities.setCapability("noReset", "true");
         capabilities.setCapability("app", appPath.getAbsolutePath());
+        capabilities.setCapability("automationName", "uiautomator2");
         //开启unicode，支持输入中文和特殊字符
         capabilities.setCapability("unicodeKeyboard", true);
         //重置键盘
@@ -60,16 +63,20 @@ public class Main {
             @Override
             public Boolean call() throws Exception {
                 //生成测试用例
-                DFSTester tester = new DFSTester();
-                Thread.sleep(5000);
-                tester.beginDFSTest(driver,apkInfo);
-                return true;
+                while (true) {
+                    DFSTester tester = new DFSTester();
+                    Thread.sleep(5000);
+                    tester.beginDFSTest(driver, apkInfo);
+                    driver.closeApp();
+                    driver.launchApp();
+                    Thread.sleep(5000);
+                }
             }
         };
         Future<Boolean> future = exec.submit(call);
         try {
             future.get(runtime, TimeUnit.SECONDS);
-            System.out.println("成功执行");
+            System.out.println("结束任务");
         } catch (InterruptedException e) {
             System.out.println("future在睡着时被打断");
             e.printStackTrace();

@@ -4,9 +4,13 @@ import apk.ApkInfo;
 import io.appium.java_client.AppiumDriver;
 import org.dom4j.*;
 import org.openqa.selenium.By;
+import org.openqa.selenium.Dimension;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 import static DFS.AuthorizationUtil.handlePermissionRequest;
@@ -15,6 +19,7 @@ import static DFS.XpathUtil.generateXpath;
 
 public class DFSTester {
 
+    private int SLEEP_TIME = 500;
     private StringBuilder xpathBuilder;
     private Stack<String> xpathStack;
 
@@ -58,6 +63,7 @@ public class DFSTester {
             pageCountAfter = pageList.size();
             pagePointerAfter = pagePointer;
         }
+        System.out.println("一次任务结束完毕");
     }
 
     /**
@@ -66,15 +72,47 @@ public class DFSTester {
      * @return 生成的页
      */
     private Page generatePage() {
-        String pageXMLText = driver.getPageSource();
-        pageXMLText = pageXMLText.replace("&#", "");
+        System.out.println(driver.currentActivity());
+        final String[] pageXMLText = {""};
+        ExecutorService exec = Executors.newFixedThreadPool(1);
+        Callable<Boolean> call = new Callable<Boolean>() {
+            @Override
+            public Boolean call() throws Exception {
+                pageXMLText[0] = driver.getPageSource();
+                return true;
+            }
+        };
+        Future<Boolean> future = exec.submit(call);
+        try {
+            future.get(5, TimeUnit.SECONDS);
+            System.out.println("成功执行");
+        } catch (InterruptedException e) {
+            System.out.println("future在睡着时被打断");
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            System.out.println("future在尝试去的任务结果时出错");
+            e.printStackTrace();
+        } catch (TimeoutException e) {
+            System.out.println("future时间超时");
+            driver.closeApp();
+            driver.launchApp();
+            try {
+                Thread.sleep(SLEEP_TIME * 2);
+            } catch (InterruptedException e2) {
+                e2.printStackTrace();
+            }
+            System.out.println(driver.currentActivity());
+            pageXMLText[0] = driver.getPageSource();
+        } finally {
+            exec.shutdown();
+        }
+        pageXMLText[0] = pageXMLText[0].replace("&#", "");
         Page page = new Page();
         try {
-            Document doc = DocumentHelper.parseText(pageXMLText);
+            Document doc = DocumentHelper.parseText(pageXMLText[0]);
             Element root = doc.getRootElement();
             //建立新的页面
             nodeList = new ArrayList<>();
-
             //初始化xpathBuilder
             xpathBuilder = new StringBuilder();
             xpathStack = new Stack<>();
@@ -114,16 +152,20 @@ public class DFSTester {
         currentNode.setScrollable(Boolean.parseBoolean(node.attributeValue("scrollable")));
         boolean operational = currentNode.isClickable() || currentNode.isScrollable();
         String path = generateXpath(node, currentNode);
-
-//        String className = node.attributeValue("class");
-//        String contentDesc = node.attributeValue("content-desc");
-//        currentNode.setClassName(className);
         String className = currentNode.getClassName();
         String contentDesc = currentNode.getContentDesc();
         //逼乎日报需要特别处理，用判断是否为首页来解决
-        boolean isReturnButton = pagePointer != 0 &&
-                (className != null && className.equals("android.widget.ImageButton"))
-                && (contentDesc != null && (contentDesc.contains("上一层") || contentDesc.equals("Navigate up")));
+        boolean isReturnButton;
+        if (packageName.equals("com.white.bihudaily")) {
+            isReturnButton =
+                    (pagePointer != 0)
+                            && (className != null && className.equals("android.widget.ImageButton"))
+                            && (contentDesc != null && (contentDesc.contains("上一层")));
+        } else {
+            isReturnButton = (className != null && className.equals("android.widget.ImageButton"))
+                    && (contentDesc != null && (contentDesc.contains("上一层") || contentDesc.equals("Navigate up")));
+        }
+        //是否可见
         boolean visible = !Boolean.parseBoolean(node.attributeValue("NAF"));
         //一部分的应用里使用英文search Search
         boolean isSearchButton = contentDesc != null && (contentDesc.contains("搜索") || contentDesc.contains("earch"));
@@ -213,9 +255,10 @@ public class DFSTester {
         }
 
         //这里特殊处理一下侧边栏
-        if (packageName.equals("com.codeest.geeknews")) {
+        if (packageName.equals("com.codeest.geeknews") || packageName.equals("org.gateshipone.odyssey") || packageName.equals("com.xiecc.seeWeather")) {
             for (int i = 0; i < pageNodeList.size(); i++) {
-                if (pageNodeList.get(i).getXpath().equals("//android.widget.ImageButton[@content-desc='打开']")) {
+                String contentDesc = pageNodeList.get(i).getContentDesc();
+                if (contentDesc != null && (contentDesc.equals("打开") || contentDesc.equals("Open navigation drawer"))) {
                     if (oriPage.getPageIndex() == 0) {
                         List<PageNode> tmp = new ArrayList<>();
                         tmp.add(pageNodeList.get(i));
@@ -245,16 +288,16 @@ public class DFSTester {
                 .filter(n -> n.getClassName().equals("android.widget.HorizontalScrollView"))
                 .collect(Collectors.toList());
         for (PageNode node : horizonScrollableNodes) {
-            int times = 5;
+            //指定滑动次数
+            int times = 3;
             WebElement element = findElement(node);
             for (int i = 0; i < times; i++) {
                 moveToRight(driver, element);
                 try {
-                    Thread.sleep(2000);
+                    Thread.sleep(SLEEP_TIME);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-                if (clickAfterSwipe(oriPage, pageNodeList)) return;
             }
             for (int i = 0; i < times; i++) {
                 moveToLeft(driver, element);
@@ -267,13 +310,12 @@ public class DFSTester {
             for (int i = 0; i < times; i++) {
                 moveToDown(driver, element);
                 try {
-                    Thread.sleep(2000);
+                    Thread.sleep(SLEEP_TIME);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-                if (clickAfterSwipe(oriPage, pageNodeList)) return;
             }
-            for (int i = 0; i < times; i++) {
+            for (int i = 0; i < times * 2; i++) {
                 moveToUp(driver, element);
             }
         }
@@ -311,7 +353,7 @@ public class DFSTester {
      */
     private boolean isNewClickableNode(PageNode node, List<PageNode> oriClickableNodeList) {
         for (PageNode tmp : oriClickableNodeList) {
-            if (tmp.equals(node)) return false;
+            if (tmp.equals(node) || tmp.getText().equals(node.getText())) return false;
         }
         return true;
     }
@@ -322,7 +364,7 @@ public class DFSTester {
      * @param node 节点
      * @return webelement元素
      */
-    private WebElement findElement(PageNode node) {
+    private WebElement findElement(PageNode node) throws org.openqa.selenium.NoSuchElementException {
         List<WebElement> res = new ArrayList<>();
         if (node.getXpathText() != null && !node.getXpathText().equals("")) {
             res = driver.findElements(By.name(node.getXpathText()));
@@ -346,16 +388,29 @@ public class DFSTester {
      * @param clickableNode 页面节点列表
      * @return 是否需要结束
      */
-    private boolean clickElement(Page oriPage, PageNode clickableNode,boolean needRecorded) {
-        WebElement element = findElement(clickableNode);
+    private boolean clickElement(Page oriPage, PageNode clickableNode, boolean needRecorded) {
+        WebElement element;
+        try {
+            element = findElement(clickableNode);
+        } catch (org.openqa.selenium.NoSuchElementException e) {
+            System.out.println("没找到按钮但是跳过了" + clickableNode.getXpath());
+            return false;
+        }
         boolean isMoreOptionsNode = checkMoreOptionNode(element);
+        //点击按钮并判断是否为webview页面
         element.click();
         try {
-            Thread.sleep(2000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+            WebDriverWait explicitwait = new WebDriverWait(driver, 3);
+            explicitwait.until(ExpectedConditions.visibilityOfElementLocated(By.className("android.webkit.WebView")));
+        } catch (org.openqa.selenium.TimeoutException e) {
+            System.out.println("不是一个webview");
         }
-//        driver.manage().timeouts().implicitlyWait(30, TimeUnit.SECONDS);
+
+        //判断侧边栏
+        boolean isSideBar = checkSideBar(clickableNode);
+        if (!isMoreOptionsNode && !isSideBar && needRecorded) {
+            pageList.get(oriPage.getPageIndex()).getNodeList().get(clickableNode.getIndex()).setVisited(true);
+        }
 
         //检查是否产生了新的页，并且将入口的控件记录下来
         Page pageAfterClick = generatePage(clickableNode);
@@ -365,13 +420,7 @@ public class DFSTester {
         }
 
         //特殊处理更多选项这个操作
-        if (!isMoreOptionsNode) {
-            //判断侧边栏
-            boolean isSideBar = checkSideBar(clickableNode);
-            if (!isSideBar && needRecorded) {
-                pageList.get(oriPage.getPageIndex()).getNodeList().get(clickableNode.getIndex()).setVisited(true);
-            }
-        } else {
+        if (isMoreOptionsNode) {
             moreOptionsNodeStack.push(clickableNode);
             pageAfterClick.setGeneratedByMoreOptionNode(true);
         }
@@ -435,21 +484,17 @@ public class DFSTester {
     private boolean returnToLastPage(Page oriPage) {
         driver.sendKeyEvent(4);
         try {
-            Thread.sleep(2000);
+            Thread.sleep(SLEEP_TIME);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
         Page pageAfterReturn = generatePage();
-        if (pageList.stream().anyMatch(p -> p.getHashcode() == pageAfterReturn.getHashcode())) {
-            resetPagePointer(pageAfterReturn.getHashcode());
-        } else {
-            driver.sendKeyEvent(4);
-            try {
-                Thread.sleep(2000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            resetPagePointer(pageAfterReturn.getHashcode());
+        //记录是不是在重新打开应用之后的指针
+        int oriPointer = pagePointer;
+        resetPagePointer(pageAfterReturn.getHashcode());
+        int newPointer = pagePointer;
+        if (newPointer == 0 && oriPointer != newPointer) {
+            return false;
         }
         return true;
     }
@@ -463,6 +508,7 @@ public class DFSTester {
         for (int i = 0; i < pageList.size(); i++) {
             if (pageList.get(i).getHashcode() == hashCode) {
                 pagePointer = i;
+                return;
             }
         }
     }
@@ -540,7 +586,7 @@ public class DFSTester {
         }
 
         try {
-            Thread.sleep(2000);
+            Thread.sleep(SLEEP_TIME);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -569,7 +615,7 @@ public class DFSTester {
 
     /**
      * 特殊的应用里面需要处理侧边栏
-     * 目前有这个需要的是geeknews
+     * 目前有这个需要的是geeknews seaweather odyssey
      *
      * @param node 要点击的元素
      * @return 这个元素是否为侧边栏
@@ -577,9 +623,10 @@ public class DFSTester {
     private boolean checkSideBar(PageNode node) {
         switch (packageName) {
             case "com.codeest.geeknews":
-                return node.getXpath().equals("//android.widget.ImageButton[@content-desc='打开']");
+                return (node.getContentDesc() != null) && (node.getContentDesc().equals("打开"));
+            case "org.gateshipone.odyssey":
             case "com.xiecc.seeWeather":
-                return node.getXpath().equals("//android.widget.ImageButton[@content-desc='Open navigation drawer']");
+                return (node.getContentDesc() != null) && (node.getContentDesc().equals("Open navigation drawer"));
             default:
                 break;
         }
@@ -593,13 +640,8 @@ public class DFSTester {
      * @return 是否为更多选项的点
      */
     private boolean checkMoreOptionNode(WebElement element) {
-//        String id = element.getAttribute("id");
         String name = element.getAttribute("name");
         boolean judge0 = name.contains("更多选项");
-//        boolean judge1 = id!=null && id.equals("com.codeest.geeknews:id/iv_vtex_menu");
-//        return judge0||judge1;
-
-
         return judge0;
     }
 
@@ -619,6 +661,9 @@ public class DFSTester {
                 .filter(n -> !n.getText().contains("夜间模式"))
                 .filter(n -> !n.getText().contains("日间模式"))
                 .filter(n -> !n.getText().contains("支付宝"))
+                .filter(n -> !(n.getText().contains("电影榜单") && packageName.equals("com.lhr.jiandou")))
+                .filter(n -> !(n.getContentDesc() != null && n.getContentDesc().equals("Add playlist")))
+                .filter(n -> !(n.getContentDesc() != null && n.getContentDesc().equals("Add Album")))
                 .collect(Collectors.toList());
     }
 }

@@ -25,7 +25,7 @@ public class XpathUtil {
         if (index != null && !index.equals("0")) {
             //获得相对的Index
             List<Element> nodeList = element.getParent().elements();
-            nodeList = nodeList.stream().filter(n -> n.attributeValue("class").equals(className)).collect(Collectors.toList());
+            nodeList = nodeList.stream().filter(n -> n.attributeValue("class").replace('$', '.').equals(className)).collect(Collectors.toList());
             int trueIndex = Integer.parseInt(index);
             for (int i = 0; i < nodeList.size(); i++) {
                 if (nodeList.get(i).attributeValue("index").equals(index)) {
