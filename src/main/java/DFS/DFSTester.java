@@ -333,7 +333,7 @@ public class DFSTester {
             if (clickElement(oriPage, clickableNode)) return;
         }
 
-        //理更多选项点击出来的页面所有所有被访问过
+        //处理更多选项点击出来的页面所有控件是否被访问过
         handlePageGeneratedByMoreOptions(oriPage);
         returnToLastPage();
     }
@@ -378,7 +378,17 @@ public class DFSTester {
         }
         boolean isMoreOptionsNode = checkMoreOptionNode(clickableNode);
 
+        //点击按钮
         element.click();
+
+        //如果是输入控件就输入一些东西
+        String className = clickableNode.getClassName();
+        if (className != null && (className.equals("android.widget.EditText") || className.equals("android.widget.AutoCompleteTextView"))) {
+            element.sendKeys("test");
+            driver.sendKeyEvent(66);
+            driver.hideKeyboard();
+        }
+
         //点击按钮并判断是否为webview页面
         if (waitForWebView) {
             try {
@@ -629,6 +639,16 @@ public class DFSTester {
         boolean judge0 = node.getContentDesc() != null && node.getContentDesc().equals("更多选项");
         boolean judge1 = packageName.equals("org.horaapps.leafpic") && node.getContentDesc() != null && node.getContentDesc().equals("排序");
         boolean judge2 = packageName.equals("org.horaapps.leafpic") && node.getContentDesc() != null && node.getContentDesc().equals("筛选");
+        if (packageName.equals("org.horaapps.leafpic")) {
+            String resourceID = node.getResourceID();
+            if (resourceID != null) {
+                if (resourceID.equals("org.horaapps.leafpic:id/ll_basic_theme")) return true;
+                if (resourceID.equals("org.horaapps.leafpic:id/ll_primaryColor")) return true;
+                if (resourceID.equals("org.horaapps.leafpic:id/ll_accentColor")) return true;
+                if (resourceID.equals("org.horaapps.leafpic:id/ll_custom_thirdAct")) return true;
+                if (resourceID.equals("org.horaapps.leafpic:id/ll_map_provider")) return true;
+            }
+        }
         return judge0 || judge1 || judge2;
     }
 
@@ -642,7 +662,6 @@ public class DFSTester {
         return oriList.stream()
                 .filter(PageNode::isClickable)
                 .filter(n -> !n.isVisited())
-                .filter(n -> !(n.getClassName().equals("android.widget.EditText") || n.getClassName().equals("android.widget.AutoCompleteTextView")))//这里过滤了编辑框防止弹出输入法
                 .filter(n -> !n.getText().contains("分享"))
                 .filter(n -> !n.getText().contains("打开浏览器"))
                 .filter(n -> !n.getText().contains("夜间模式"))
