@@ -1,13 +1,11 @@
 package apk;
 
-import apk.ApkInfo;
-
 import java.io.*;
 
 public class ApkUtil {
-    public static final String LAUNCHABLE_ACTIVITY = "launchable";
-    public static final String PACKAGE = "package";
-    public static final String TARGET_SDK_VERSION = "targetSdkVersion";
+    private static final String LAUNCHABLE_ACTIVITY = "launchable";
+    private static final String PACKAGE = "package";
+    private static final String TARGET_SDK_VERSION = "targetSdkVersion";
     private static final String SPLIT_REGEX = "(: )|(=')|(' )|'";
     private ProcessBuilder builder;
     // aapt 所在目录
@@ -31,7 +29,7 @@ public class ApkUtil {
             inputStream = process.getInputStream();
             bufferedReader = new BufferedReader(new InputStreamReader(inputStream, "utf-8"));
             ApkInfo apkInfo = new ApkInfo();
-            String temp = null;
+            String temp;
             while ((temp = bufferedReader.readLine()) != null) {
                 setApkInfoProperty(apkInfo, temp);
             }

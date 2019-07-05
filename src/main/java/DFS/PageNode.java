@@ -13,7 +13,6 @@ public class PageNode {
     private String contentDesc;
     //用于xpath的text
     private String xpathText;
-    //类名,后续的行为基本按照这个类名来进行
     private String className;
     //可点击
     private boolean clickable;
