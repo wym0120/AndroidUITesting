@@ -4,6 +4,7 @@ import apk.ApkInfo;
 import io.appium.java_client.AppiumDriver;
 import org.dom4j.*;
 import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
@@ -290,41 +291,43 @@ public class DFSTester {
                 .filter(n -> n.getClassName().equals("android.widget.HorizontalScrollView"))
                 .collect(Collectors.toList());
 
-        //指定滑动次数
-        int scrollTimes = 3;
-        //横向滑动
-        for (PageNode node : horizonScrollableNodes) {
-            pageList.get(oriPage.getPageIndex()).getNodeList().get(node.getIndex()).setVisited(true);
-            WebElement element = findElement(node);
-            ScrollUtil util = new ScrollUtil(element);
-            for (int i = 0; i < scrollTimes; i++) {
-                util.moveToRight(driver);
-                try {
-                    Thread.sleep(SLEEP_TIME);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+        if (!checkSettingPage(oriPage)) {
+            //指定滑动次数
+            int scrollTimes = 3;
+            //横向滑动
+            for (PageNode node : horizonScrollableNodes) {
+                pageList.get(oriPage.getPageIndex()).getNodeList().get(node.getIndex()).setVisited(true);
+                WebElement element = findElement(node);
+                ScrollUtil util = new ScrollUtil(element);
+                for (int i = 0; i < scrollTimes; i++) {
+                    util.moveToRight(driver);
+                    try {
+                        Thread.sleep(SLEEP_TIME);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+                for (int i = 0; i < scrollTimes; i++) {
+                    util.moveToLeft(driver);
                 }
             }
-            for (int i = 0; i < scrollTimes; i++) {
-                util.moveToLeft(driver);
-            }
-        }
 
-        //纵向滑动
-        for (PageNode node : verticalScrollableNodes) {
-            pageList.get(oriPage.getPageIndex()).getNodeList().get(node.getIndex()).setVisited(true);
-            WebElement element = findElement(node);
-            ScrollUtil util = new ScrollUtil(element);
-            for (int i = 0; i < scrollTimes; i++) {
-                util.moveToDown(driver);
-                try {
-                    Thread.sleep(SLEEP_TIME);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+            //纵向滑动
+            for (PageNode node : verticalScrollableNodes) {
+                pageList.get(oriPage.getPageIndex()).getNodeList().get(node.getIndex()).setVisited(true);
+                WebElement element = findElement(node);
+                ScrollUtil util = new ScrollUtil(element);
+                for (int i = 0; i < scrollTimes; i++) {
+                    util.moveToDown(driver);
+                    try {
+                        Thread.sleep(SLEEP_TIME);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                 }
-            }
-            for (int i = 0; i < scrollTimes * 2; i++) {
-                util.moveToUp(driver);
+                for (int i = 0; i < scrollTimes * 2; i++) {
+                    util.moveToUp(driver);
+                }
             }
         }
 
@@ -332,6 +335,9 @@ public class DFSTester {
         for (PageNode clickableNode : lowPriorityClickableNodes) {
             if (clickElement(oriPage, clickableNode)) return;
         }
+
+        //处理特殊的设置页面
+        if (handleSettingPage(oriPage)) return;
 
         //处理更多选项点击出来的页面所有控件是否被访问过
         handlePageGeneratedByMoreOptions(oriPage);
@@ -384,9 +390,18 @@ public class DFSTester {
         //如果是输入控件就输入一些东西
         String className = clickableNode.getClassName();
         if (className != null && (className.equals("android.widget.EditText") || className.equals("android.widget.AutoCompleteTextView"))) {
-            element.sendKeys("test");
-            driver.sendKeyEvent(66);
-            driver.hideKeyboard();
+            element.sendKeys("1234");
+//            driver.sendKeyEvent(66);
+            try {
+                try {
+                    Thread.sleep(SLEEP_TIME);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                driver.hideKeyboard();
+            } catch (WebDriverException e) {
+                System.out.println("没有键盘可以隐藏");
+            }
         }
 
         //点击按钮并判断是否为webview页面
@@ -594,6 +609,49 @@ public class DFSTester {
     }
 
     /**
+     * 检查是否是设置页面来判断是否要滑动
+     *
+     * @param oriPage 原始页面
+     * @return 是否为设置页面
+     */
+    private boolean checkSettingPage(Page oriPage) {
+        if (packageName.equals("org.horaapps.leafpic")) {
+            if (oriPage.getSpecialNode().getText().equals("设置")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 处理设置页面
+     *
+     * @param oriPage 原始页面
+     * @return 是否为设置页面
+     */
+    private boolean handleSettingPage(Page oriPage) {
+        if (packageName.equals("org.horaapps.leafpic")) {
+            if (oriPage.getSpecialNode().getText().equals("设置")) {
+                List<PageNode> ScrollableNodes = oriPage.getNodeList().stream().filter(PageNode::isScrollable).collect(Collectors.toList());
+                WebElement element = findElement(ScrollableNodes.get(0));
+                ScrollUtil util = new ScrollUtil(element);
+                util.moveToDown(driver);
+                Page pageAfterClick = generatePage();
+                pageAfterClick.setSpecialNode(oriPage.getSpecialNode());
+                boolean isNewPageGenerated = checkGenerateNewPage(pageAfterClick);
+                if (isNewPageGenerated) {
+                    pageAfterClick.getNodeList().forEach(n -> n.setBelonging(pageList.size()));
+                    pageList.add(pageAfterClick);
+                    pageAfterClick.setPageIndex(pageList.size() - 1);
+                    pagePointer = pageList.indexOf(pageAfterClick);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * 判断是否有需要调用第三方应用的入口，如果有就是非法的
      *
      * @param page 点击之后的页面
@@ -643,9 +701,6 @@ public class DFSTester {
             String resourceID = node.getResourceID();
             if (resourceID != null) {
                 if (resourceID.equals("org.horaapps.leafpic:id/ll_basic_theme")) return true;
-                if (resourceID.equals("org.horaapps.leafpic:id/ll_primaryColor")) return true;
-                if (resourceID.equals("org.horaapps.leafpic:id/ll_accentColor")) return true;
-                if (resourceID.equals("org.horaapps.leafpic:id/ll_custom_thirdAct")) return true;
                 if (resourceID.equals("org.horaapps.leafpic:id/ll_map_provider")) return true;
             }
         }
