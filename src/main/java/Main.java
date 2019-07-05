@@ -67,13 +67,9 @@ public class Main {
                     DFSTester tester = new DFSTester();
                     Thread.sleep(5000);
                     tester.beginDFSTest(driver, apkInfo, true);
-                    driver.closeApp();
-                    driver.launchApp();
-                    Thread.sleep(5000);
+                    reLaunch();
                     tester.beginDFSTest(driver, apkInfo, false);
-                    driver.closeApp();
-                    driver.launchApp();
-                    Thread.sleep(5000);
+                    reLaunch();
                 }
             }
         };
@@ -92,6 +88,16 @@ public class Main {
             e.printStackTrace();
         }finally{
             exec.shutdown();
+        }
+    }
+
+    private static void reLaunch() {
+        driver.closeApp();
+        driver.launchApp();
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
     }
 }
