@@ -26,7 +26,6 @@ public class ApkUtil {
         BufferedReader bufferedReader = null;
 
         File test = new File(aaptTool);
-//        System.out.println("文件是否存在"+test.exists());
         try {
             process = builder.command(aaptTool, "d", "badging", apkPath).start();
             inputStream = process.getInputStream();

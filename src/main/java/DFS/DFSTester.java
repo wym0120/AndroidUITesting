@@ -4,7 +4,6 @@ import apk.ApkInfo;
 import io.appium.java_client.AppiumDriver;
 import org.dom4j.*;
 import org.openqa.selenium.By;
-import org.openqa.selenium.Dimension;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
@@ -19,7 +18,9 @@ import static DFS.XpathUtil.generateXpath;
 
 public class DFSTester {
 
-    private int SLEEP_TIME = 500;
+    private final int SLEEP_TIME = 1000;
+    private boolean waitForWebView;
+
     private StringBuilder xpathBuilder;
     private Stack<String> xpathStack;
 
@@ -32,10 +33,12 @@ public class DFSTester {
     //用来处理"更多选项"的情况
     private Stack<PageNode> moreOptionsNodeStack;
 
-    public void beginDFSTest(AppiumDriver driver, ApkInfo apkInfo) {
+
+    public void beginDFSTest(AppiumDriver driver, ApkInfo apkInfo, boolean waitForWebView) {
         //初始化测试参数
         packageName = apkInfo.getPackageName();
         this.driver = driver;
+        this.waitForWebView = waitForWebView;
         moreOptionsNodeStack = new Stack<>();
         //初始化页面
         pageList = new ArrayList<>();
@@ -305,7 +308,7 @@ public class DFSTester {
         }
 
         for (PageNode node : verticalScrollableNodes) {
-            int times = 5;
+            int times = 3;
             WebElement element = findElement(node);
             for (int i = 0; i < times; i++) {
                 moveToDown(driver, element);
@@ -396,14 +399,23 @@ public class DFSTester {
             System.out.println("没找到按钮但是跳过了" + clickableNode.getXpath());
             return false;
         }
-        boolean isMoreOptionsNode = checkMoreOptionNode(element);
-        //点击按钮并判断是否为webview页面
+        boolean isMoreOptionsNode = checkMoreOptionNode(clickableNode);
+
         element.click();
-        try {
-            WebDriverWait explicitwait = new WebDriverWait(driver, 3);
-            explicitwait.until(ExpectedConditions.visibilityOfElementLocated(By.className("android.webkit.WebView")));
-        } catch (org.openqa.selenium.TimeoutException e) {
-            System.out.println("不是一个webview");
+        //点击按钮并判断是否为webview页面
+        if (waitForWebView) {
+            try {
+                WebDriverWait explicitWait = new WebDriverWait(driver, 3);
+                explicitWait.until(ExpectedConditions.visibilityOfElementLocated(By.className("android.webkit.WebView")));
+            } catch (org.openqa.selenium.TimeoutException e) {
+                System.out.println("不是一个webview");
+            }
+        } else {
+            try {
+                Thread.sleep(SLEEP_TIME);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
 
         //判断侧边栏
@@ -636,13 +648,13 @@ public class DFSTester {
     /**
      * 判断这个节点是否是更多选项的节点
      *
-     * @param element 节点
      * @return 是否为更多选项的点
      */
-    private boolean checkMoreOptionNode(WebElement element) {
-        String name = element.getAttribute("name");
-        boolean judge0 = name.contains("更多选项");
-        return judge0;
+    private boolean checkMoreOptionNode(PageNode node) {
+        boolean judge0 = node.getContentDesc() != null && node.getContentDesc().equals("更多选项");
+        boolean judge1 = packageName.equals("org.horaapps.leafpic") && node.getContentDesc() != null && node.getContentDesc().equals("排序");
+        boolean judge2 = packageName.equals("org.horaapps.leafpic") && node.getContentDesc() != null && node.getContentDesc().equals("筛选");
+        return judge0 || judge1 || judge2;
     }
 
     /**
@@ -664,6 +676,7 @@ public class DFSTester {
                 .filter(n -> !(n.getText().contains("电影榜单") && packageName.equals("com.lhr.jiandou")))
                 .filter(n -> !(n.getContentDesc() != null && n.getContentDesc().equals("Add playlist")))
                 .filter(n -> !(n.getContentDesc() != null && n.getContentDesc().equals("Add Album")))
+                .filter(n -> !(n.getText() != null && n.getText().equals("下载") && packageName.equals("com.hotbitmapgg.ohmybilibili")))
                 .collect(Collectors.toList());
     }
 }
