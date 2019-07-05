@@ -11,8 +11,8 @@ public class ApkUtil {
     private static final String SPLIT_REGEX = "(: )|(=')|(' )|'";
     private ProcessBuilder builder;
     // aapt 所在目录
-//    private static String aaptToolPath = "resources/aapt/";
-    private static String aaptToolPath = "src/main/resources/aapt/";
+    private static String aaptToolPath = "resources/aapt/";
+//    private static String aaptToolPath = "src/main/resources/aapt/";
 
     public ApkUtil() {
         builder = new ProcessBuilder();

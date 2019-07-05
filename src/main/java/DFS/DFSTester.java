@@ -284,15 +284,18 @@ public class DFSTester {
         //处理可以滑动的组件
         List<PageNode> verticalScrollableNodes = pageNodeList.stream()
                 .filter(PageNode::isScrollable)
+                .filter(n -> !n.isVisited())
                 .filter(n -> !n.getClassName().equals("android.widget.HorizontalScrollView"))
                 .collect(Collectors.toList());
         List<PageNode> horizonScrollableNodes = pageNodeList.stream()
                 .filter(PageNode::isScrollable)
+                .filter(n -> !n.isVisited())
                 .filter(n -> n.getClassName().equals("android.widget.HorizontalScrollView"))
                 .collect(Collectors.toList());
         for (PageNode node : horizonScrollableNodes) {
             //指定滑动次数
             int times = 3;
+            pageList.get(oriPage.getPageIndex()).getNodeList().get(node.getIndex()).setVisited(true);
             WebElement element = findElement(node);
             for (int i = 0; i < times; i++) {
                 moveToRight(driver, element);
@@ -309,6 +312,7 @@ public class DFSTester {
 
         for (PageNode node : verticalScrollableNodes) {
             int times = 3;
+            pageList.get(oriPage.getPageIndex()).getNodeList().get(node.getIndex()).setVisited(true);
             WebElement element = findElement(node);
             for (int i = 0; i < times; i++) {
                 moveToDown(driver, element);
@@ -666,8 +670,8 @@ public class DFSTester {
     private List<PageNode> getClickableNodeList(List<PageNode> oriList) {
         return oriList.stream()
                 .filter(PageNode::isClickable)
-                .filter(n -> !(n.getClassName().equals("android.widget.EditText") || n.getClassName().equals("android.widget.AutoCompleteTextView")))//这里过滤了编辑框防止弹出输入法
                 .filter(n -> !n.isVisited())
+                .filter(n -> !(n.getClassName().equals("android.widget.EditText") || n.getClassName().equals("android.widget.AutoCompleteTextView")))//这里过滤了编辑框防止弹出输入法
                 .filter(n -> !n.getText().contains("分享"))
                 .filter(n -> !n.getText().contains("打开浏览器"))
                 .filter(n -> !n.getText().contains("夜间模式"))
